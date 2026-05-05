@@ -1,0 +1,72 @@
+@page "/admin/heatmap"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-grid-3x3-gap me-2"></i>Hourly Attendance Heat Map</h4>
+
+<div class="mb-3 d-flex align-items-center gap-3">
+    <label class="form-label mb-0 fw-semibold">Date:</label>
+    <input type="date" class="form-control w-auto" @bind="_selectedDate" @bind:format="yyyy-MM-dd" />
+    <button class="btn btn-primary btn-sm" @onclick="LoadDataAsync">
+        <i class="bi bi-search"></i> Load
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_breakdowns.Count == 0)
+{
+    <div class="alert alert-info">No hourly data for @_selectedDate.ToString("dd MMM yyyy").</div>
+}
+else
+{
+    <!-- Legend -->
+    <div class="d-flex gap-3 mb-3 small">
+        <span><span class="badge bg-success me-1">&nbsp;&nbsp;</span>Working</span>
+        <span><span class="badge bg-danger me-1">&nbsp;&nbsp;</span>Absent</span>
+        <span><span class="badge bg-warning me-1">&nbsp;&nbsp;</span>Break</span>
+        <span><span class="badge me-1" style="background:#6610f2;">&nbsp;&nbsp;</span>Overtime</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle" style="font-size:0.75rem;">
+            <thead class="table-dark">
+                <tr>
+                    <th style="min-width:160px;">Employee</th>
+                    @for (var h = 0; h < 24; h++)
+                    {
+                        <th class="text-center px-1">@h.ToString("D2")</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var bd in _breakdowns)
+                {
+                    <tr>
+                        <td>
+                            @bd.EmployeeName
+                            <br /><span class="text-muted">@bd.EmployeeCode</span>
+                        </td>
+                        @for (var h = 0; h < 24; h++)
+                        {
+                            var slot = bd.Slots.FirstOrDefault(s => s.HourSlot == h);
+                            var bg = HeatColor(slot);
+                            var title = slot != null
+                                ? $"{bd.EmployeeName} {h:D2}:00 — {slot.MinutesWorked} min"
+                                : $"{bd.EmployeeName} {h:D2}:00 — absent";
+                            <td class="text-center p-0" style="background:@bg;width:32px;"
+                                title="@title">
+                                @if (slot != null && slot.MinutesWorked > 0)
+                                {
+                                    <span class="text-white fw-bold" style="font-size:0.65rem;">@slot.MinutesWorked</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

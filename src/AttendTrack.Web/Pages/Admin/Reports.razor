@@ -1,0 +1,103 @@
+@page "/admin/reports"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-bar-chart me-2"></i>Reports</h4>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6><i class="bi bi-calendar-week me-2"></i>Weekly Report</h6>
+                <div class="mb-2">
+                    <label class="form-label small">Week starting:</label>
+                    <input type="date" class="form-control form-control-sm" @bind="_weekStart" @bind:format="yyyy-MM-dd" />
+                </div>
+                <button class="btn btn-outline-primary btn-sm" @onclick="LoadWeeklyAsync">
+                    <i class="bi bi-search"></i> Load
+                </button>
+                @if (_reportDays.Count > 0)
+                {
+                    <button class="btn btn-outline-success btn-sm ms-2" @onclick="ExportWeeklyCsvAsync" disabled="@_exporting">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> CSV
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6><i class="bi bi-calendar-month me-2"></i>Monthly Report</h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <input type="number" class="form-control form-control-sm" @bind="_year" min="2020" max="2099" placeholder="Year" />
+                    </div>
+                    <div class="col-6">
+                        <input type="number" class="form-control form-control-sm" @bind="_month" min="1" max="12" placeholder="Month" />
+                    </div>
+                </div>
+                <button class="btn btn-outline-primary btn-sm" @onclick="LoadMonthlyAsync">
+                    <i class="bi bi-search"></i> Load
+                </button>
+                @if (_reportDays.Count > 0)
+                {
+                    <button class="btn btn-outline-danger btn-sm ms-2" @onclick="ExportMonthlyPdfAsync" disabled="@_exporting">
+                        <i class="bi bi-file-earmark-pdf"></i> PDF
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6><i class="bi bi-clock-history me-2"></i>Overtime Report</h6>
+                <div class="mb-2">
+                    <input type="number" class="form-control form-control-sm" @bind="_otYear" placeholder="Year" />
+                </div>
+                <div class="mb-2">
+                    <input type="number" class="form-control form-control-sm" @bind="_otMonth" placeholder="Month" />
+                </div>
+                <button class="btn btn-outline-primary btn-sm" @onclick="LoadOvertimeAsync">
+                    <i class="bi bi-search"></i> Load
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-4"><div class="spinner-border text-primary"></div></div>
+}
+
+@if (_reportDays.Count > 0)
+{
+    <div class="card mt-4">
+        <div class="card-header fw-semibold d-flex justify-content-between">
+            Report Results
+            <span class="badge bg-primary">@_reportDays.Count days</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Date</th><th>Present</th><th>Absent</th><th>Late</th><th>Missed Checkout</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var day in _reportDays)
+                    {
+                        <tr>
+                            <td>@day.Date</td>
+                            <td class="text-success">@day.TotalPresent</td>
+                            <td class="text-danger">@day.TotalAbsent</td>
+                            <td class="text-warning">@day.TotalLate</td>
+                            <td class="text-secondary">@day.TotalMissedCheckout</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+

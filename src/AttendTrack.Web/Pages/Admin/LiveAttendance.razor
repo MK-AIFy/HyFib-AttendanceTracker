@@ -1,0 +1,83 @@
+@page "/admin/live"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-activity me-2"></i>Live Attendance
+    <span class="badge bg-success ms-2 align-middle">Today</span>
+</h4>
+
+<div class="mb-3 d-flex gap-2">
+    <input class="form-control w-auto" placeholder="Search employee..." @oninput="OnSearch" />
+    <button class="btn btn-outline-primary btn-sm" @onclick="LoadDataAsync">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Employee</th>
+                        <th>Check-In (IST)</th>
+                        <th>Check-Out (IST)</th>
+                        <th>Hours</th>
+                        <th>Break</th>
+                        <th>Status</th>
+                        <th>Auth Mode</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in FilteredRecords)
+                    {
+                        <tr class="@(r.HasViolation ? "table-warning" : "")">
+                            <td>
+                                <strong>@r.EmployeeName</strong>
+                                <br /><span class="text-muted small">@r.EmployeeCode</span>
+                            </td>
+                            <td>@(r.CheckInTimeIst ?? "—")</td>
+                            <td>@(r.CheckOutTimeIst ?? "—")</td>
+                            <td>@r.TotalHoursWorked.ToString("F1")</td>
+                            <td class="small">@(r.BreakDurationMinutes > 0 ? $"{r.BreakDurationMinutes} min" : "—")</td>
+                            <td>
+                                <span class="badge @StatusBadgeClass(r.Status)">@r.Status</span>
+                            </td>
+                            <td class="small">
+                                @if (!string.IsNullOrEmpty(r.VerifyMode))
+                                {
+                                    @if (r.VerifyMode.Contains("face") && r.VerifyMode.Contains("fp"))
+                                    { <i class="bi bi-fingerprint text-primary me-1"></i><span>Face+FP</span> }
+                                    else if (r.VerifyMode.Contains("face"))
+                                    { <i class="bi bi-person-bounding-box text-info me-1"></i><span>Face</span> }
+                                    else if (r.VerifyMode.Contains("fp"))
+                                    { <i class="bi bi-fingerprint text-secondary me-1"></i><span>FP</span> }
+                                    else if (r.VerifyMode == "card")
+                                    { <i class="bi bi-credit-card text-success me-1"></i><span>Card</span> }
+                                    else
+                                    { <i class="bi bi-123 text-warning me-1"></i><span>PIN</span> }
+                                }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td>
+                                @if (r.CheckInSource == "Hikvision")
+                                { <i class="bi bi-cpu text-primary" title="Hikvision Device"></i> }
+                                else
+                                { <i class="bi bi-keyboard text-secondary" title="Blazor Kiosk"></i> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-muted small">
+            @FilteredRecords.Count() of @_records.Count records
+        </div>
+    </div>
+}

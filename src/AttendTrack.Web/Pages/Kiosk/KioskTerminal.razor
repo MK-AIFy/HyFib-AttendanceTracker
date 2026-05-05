@@ -1,0 +1,72 @@
+@page "/kiosk"
+@attribute [AllowAnonymous]
+@layout AttendTrack.Web.Layouts.KioskLayout
+
+<div class="card shadow-lg" style="width:400px;">
+    <div class="card-header bg-primary text-white text-center py-3">
+        <h5 class="mb-0"><i class="bi bi-clock me-2"></i>@_currentTime</h5>
+        <small class="opacity-75">Attendance Terminal</small>
+    </div>
+    <div class="card-body p-4">
+        <!-- Biometric banner -->
+        <div class="alert alert-info text-center mb-3 py-2 small">
+            <i class="bi bi-fingerprint fs-4 d-block mb-1"></i>
+            Please use the <strong>Hikvision biometric terminal</strong> at the entrance.
+            <br />This PIN terminal is for admin use only.
+        </div>
+
+        @if (_lockedOut)
+        {
+            <div class="alert alert-danger text-center">
+                <i class="bi bi-lock-fill fs-3 d-block mb-2"></i>
+                Terminal locked after 3 failed attempts.<br />
+                Contact your administrator.
+            </div>
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-sm py-2 text-center">
+                    @_message
+                </div>
+            }
+
+            <div class="mb-3">
+                <label class="form-label">Employee Code</label>
+                <input class="form-control form-control-lg text-center" maxlength="20"
+                       @bind="_employeeCode" @oninput="ResetIdleTimer"
+                       placeholder="EMP-001" autocomplete="off" />
+            </div>
+            <div class="mb-4">
+                <label class="form-label">PIN</label>
+                <input class="form-control form-control-lg text-center" type="password"
+                       maxlength="6" @bind="_pin" @oninput="ResetIdleTimer"
+                       placeholder="••••••" autocomplete="off" />
+            </div>
+            <div class="d-grid gap-2">
+                <button class="btn btn-success btn-lg" @onclick="CheckInAsync">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>Check In
+                </button>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <button class="btn btn-outline-warning w-100" @onclick="BreakStartAsync">
+                            Break Out
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-outline-info w-100" @onclick="BreakEndAsync">
+                            Break In
+                        </button>
+                    </div>
+                </div>
+                <button class="btn btn-danger btn-lg" @onclick="CheckOutAsync">
+                    <i class="bi bi-box-arrow-right me-2"></i>Check Out
+                </button>
+            </div>
+        }
+    </div>
+    <div class="card-footer text-center text-muted small">
+        Today: @_todayDate &nbsp;|&nbsp; Present today: @_presentCount
+    </div>
+</div>

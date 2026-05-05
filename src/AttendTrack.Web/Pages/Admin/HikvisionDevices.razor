@@ -1,0 +1,129 @@
+@page "/admin/devices"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+@using AttendTrack.Domain.Entities
+
+<h4 class="mb-4"><i class="bi bi-cpu me-2"></i>Biometric Devices</h4>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    @foreach (var device in _devices)
+    {
+        var online = device.LastEventReceivedAt.HasValue &&
+                     device.LastEventReceivedAt.Value > DateTime.UtcNow.AddMinutes(-5);
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    @if (online)
+                    { <span class="badge bg-success me-2">● ONLINE</span> }
+                    else
+                    { <span class="badge bg-secondary me-2">○ OFFLINE</span> }
+                    <strong>@device.DeviceName</strong> — @device.Location
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SyncDeviceAsync(device.Id)">
+                        <i class="bi bi-arrow-repeat"></i> Sync Now
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowEnrollPanel(device.Id)">
+                        <i class="bi bi-person-plus"></i> Enroll Employees
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row text-center g-3 mb-3">
+                    <div class="col">
+                        <div class="text-muted small">Model</div>
+                        <strong>@device.Model</strong>
+                    </div>
+                    <div class="col">
+                        <div class="text-muted small">IP</div>
+                        <strong>@device.IpAddress:@device.Port</strong>
+                    </div>
+                    <div class="col">
+                        <div class="text-muted small">Firmware</div>
+                        <strong>@(device.FirmwareVersion ?? "—")</strong>
+                    </div>
+                    <div class="col">
+                        <div class="text-muted small">Enrolled</div>
+                        <strong>@device.EnrolledEmployeeCount</strong>
+                    </div>
+                    <div class="col">
+                        <div class="text-muted small">Last Event</div>
+                        <strong>@(device.LastEventReceivedAt.HasValue ? IstTimeHelper.ToIst(device.LastEventReceivedAt.Value) : "—")</strong>
+                    </div>
+                </div>
+
+                @if (_enrollPanelDeviceId == device.Id)
+                {
+                    <div class="border rounded p-3 mb-3 bg-light">
+                        <h6>Enroll Employee</h6>
+                        <div class="input-group mb-2" style="max-width:400px;">
+                            <input class="form-control" placeholder="Employee Code" @bind="_enrollCode" />
+                            <button class="btn btn-primary" @onclick="() => EnrollEmployeeAsync(device.Id)">
+                                <i class="bi bi-person-check"></i> Enroll
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_enrollMessage))
+                        {
+                            <div class="alert alert-sm @(_enrollSuccess ? "alert-success" : "alert-danger") py-1">
+                                @_enrollMessage
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Recent events -->
+                @if (_eventLogs.TryGetValue(device.SerialNumber, out var logs) && logs.Count > 0)
+                {
+                    <h6 class="mt-3">Recent Events</h6>
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr><th>Time (IST)</th><th>Employee</th><th>Status</th><th>Mode</th><th>Result</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in logs)
+                            {
+                                <tr>
+                                    <td class="small">@IstTimeHelper.ToIst(log.DeviceLocalTime)</td>
+                                    <td>@log.EmployeeName <span class="text-muted small">(@log.EmployeeCode)</span></td>
+                                    <td>
+                                        <span class="badge @AttendanceStatusBadge(log.AttendanceStatus)">
+                                            @log.AttendanceStatus
+                                        </span>
+                                    </td>
+                                    <td class="small text-muted">@log.VerifyMode</td>
+                                    <td>
+                                        @if (log.IsProcessed)
+                                        { <i class="bi bi-check-circle text-success" title="Processed"></i> }
+                                        else if (!string.IsNullOrEmpty(log.ProcessingError))
+                                        { <i class="bi bi-exclamation-circle text-danger" title="@log.ProcessingError"></i> }
+                                        else
+                                        { <i class="bi bi-hourglass text-warning" title="Pending"></i> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_devices.Count == 0)
+    {
+        <div class="alert alert-info">No biometric devices registered. Configure a Hikvision DS-K1T320MFWX and register its details here.</div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(_syncMessage))
+{
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div class="toast show">
+            <div class="toast-body">@_syncMessage</div>
+        </div>
+    </div>
+}

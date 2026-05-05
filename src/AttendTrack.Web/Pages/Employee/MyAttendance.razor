@@ -1,0 +1,64 @@
+@page "/employee/my-attendance"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-calendar-check me-2"></i>My Attendance</h4>
+
+<div class="mb-3 d-flex align-items-center gap-3 flex-wrap">
+    <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0">From:</label>
+        <input type="date" class="form-control form-control-sm" @bind="_from" @bind:format="yyyy-MM-dd" />
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0">To:</label>
+        <input type="date" class="form-control form-control-sm" @bind="_to" @bind:format="yyyy-MM-dd" />
+    </div>
+    <button class="btn btn-primary btn-sm" @onclick="LoadDataAsync">
+        <i class="bi bi-search"></i> Load
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_records.Count == 0)
+{
+    <div class="alert alert-info">No attendance records found for the selected period.</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th><th>Check In</th><th>Check Out</th>
+                        <th>Hours</th><th>Status</th><th>Auth Mode</th><th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _records)
+                    {
+                        <tr>
+                            <td>@r.WorkDate</td>
+                            <td>@(r.CheckInTimeIst ?? "—")</td>
+                            <td>@(r.CheckOutTimeIst ?? "—")</td>
+                            <td>@r.TotalHoursWorked.ToString("F1")</td>
+                            <td><span class="badge @StatusBadge(r.Status)">@r.Status</span></td>
+                            <td class="small text-muted">@(r.VerifyMode ?? "—")</td>
+                            <td>
+                                @if (r.CheckInSource == "Hikvision")
+                                { <i class="bi bi-fingerprint text-success" title="Hikvision"></i> }
+                                else
+                                { <i class="bi bi-keyboard text-secondary" title="Kiosk PIN"></i> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-muted small">@_records.Count records</div>
+    </div>
+}
+

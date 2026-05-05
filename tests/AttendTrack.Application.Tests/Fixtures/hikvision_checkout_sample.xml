@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hikvision DS-K1T320MFWX — Check-Out event sample payload
+  Employee EMP-001 scans face+fingerprint at Admin Office main entrance (end of day).
+  Use with:
+    curl -X POST https://localhost/api/hikvision/events \
+      -H 'Authorization: Basic hikadmin:PASSWORD' \
+      -H 'Content-Type: application/xml' \
+      -d @tests/AttendTrack.Application.Tests/Fixtures/hikvision_checkout_sample.xml
+-->
+<EventNotificationAlert version="2.0">
+  <ipAddress>192.168.1.50</ipAddress>
+  <macAddress>AA:BB:CC:DD:EE:FF</macAddress>
+  <channelID>1</channelID>
+  <dateTime>2025-01-15T18:05:00+05:30</dateTime>
+  <eventType>AccessControllerEvent</eventType>
+  <AccessControllerEvent>
+    <deviceName>Access Controller</deviceName>
+    <majorEventType>5</majorEventType>
+    <subEventType>75</subEventType>
+    <cardNo></cardNo>
+    <employeeNoString>EMP-001</employeeNoString>
+    <name>John Doe</name>
+    <currentVerifyMode>faceAndFp</currentVerifyMode>
+    <attendanceStatus>checkOut</attendanceStatus>
+    <serialNo>34</serialNo>
+    <userType>normal</userType>
+    <time>1736950500</time>
+    <mask>noMask</mask>
+  </AccessControllerEvent>
+</EventNotificationAlert>

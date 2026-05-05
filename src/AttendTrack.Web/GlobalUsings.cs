@@ -1,0 +1,16 @@
+global using Microsoft.AspNetCore.Components;
+global using Microsoft.AspNetCore.Authorization;
+global using Microsoft.JSInterop;
+global using MediatR;
+global using AttendTrack.Application.DTOs;
+global using AttendTrack.Application.Queries.Attendance;
+global using AttendTrack.Application.Queries.Reports;
+global using AttendTrack.Application.Commands.Attendance;
+global using AttendTrack.Application.Commands.Employee;
+global using AttendTrack.Application.Commands.Shift;
+global using AttendTrack.Application.Commands.Hikvision;
+global using AttendTrack.Application.Common;
+global using AttendTrack.Domain.Enums;
+global using AttendTrack.Domain.Interfaces.Repositories;
+global using AttendTrack.Infrastructure.Security;
+global using AttendTrack.Web.Services;

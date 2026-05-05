@@ -1,0 +1,209 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using AttendTrack.Domain.Entities;
+using AttendTrack.Domain.Enums;
+using AttendTrack.Domain.ValueObjects;
+using AttendTrack.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Testcontainers.PostgreSql;
+
+namespace AttendTrack.Integration.Tests.Helpers;
+
+/// <summary>
+/// WebApplicationFactory that spins up a real PostgreSQL container (TestContainers) and
+/// boots the full ASP.NET Core pipeline.
+///
+/// Key design decisions:
+/// - Connection string override via ConfigureAppConfiguration → AddInfrastructure reads it automatically.
+/// - All IHostedService background jobs are removed to keep tests fast and deterministic.
+/// - TestRemoteIpStartupFilter injects a middleware that reads the X-Test-RemoteIp header
+///   and sets context.Connection.RemoteIpAddress, enabling IP-based auth tests.
+/// - BCrypt work factor = 4 (minimum) for fast test startup.
+/// </summary>
+public sealed class AttendTrackWebApplicationFactory
+    : Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>,
+      IAsyncLifetime
+{
+    // ── Test constants ────────────────────────────────────────────────────────
+
+    public const string TestDeviceIp       = "192.168.1.50";
+    public const string TestDeviceSerial   = "TESTSERIAL001";
+    public const string TestDeviceUsername = "admin";
+    public const string TestDevicePassword = "hiktest123";
+    public const string TestEmployeeCode   = "EMP-001";
+
+    // ── TestContainers ────────────────────────────────────────────────────────
+
+#pragma warning disable CS0618   // PostgreSqlBuilder() parameterless constructor — image default is fine for tests
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
+        .WithImage("postgres:16-alpine")
+        .WithDatabase("attendtrack_test")
+        .WithUsername("testuser")
+        .WithPassword("testpass")
+        .Build();
+#pragma warning restore CS0618
+
+    // ── IAsyncLifetime ────────────────────────────────────────────────────────
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+
+        // Trigger host build + DB migration/creation + seed data
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AttendTrackDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        await SeedAsync(db);
+    }
+
+    public new async Task DisposeAsync()
+    {
+        await _postgres.StopAsync();
+        await base.DisposeAsync();
+    }
+
+    // ── WebApplicationFactory override ────────────────────────────────────────
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Testing");
+
+        // Override connection strings BEFORE AddInfrastructure runs them
+        builder.ConfigureAppConfiguration(config =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = _postgres.GetConnectionString(),
+                ["ConnectionStrings:Redis"]             = "",   // Disables Redis → uses IMemoryCache
+                ["Hikvision:FaceCapturePath"]           = Path.GetTempPath()
+            });
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            // Remove ALL background services (polling, hourly tracker, missed-punch, etc.)
+            var hostedServiceDescriptors = services
+                .Where(d => d.ServiceType == typeof(IHostedService))
+                .ToList();
+            foreach (var d in hostedServiceDescriptors)
+                services.Remove(d);
+
+            // Inject IP-spoofing middleware so we can test IP-based auth
+            services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>();
+        });
+    }
+
+    // ── Helper: create a client that appears to come from the device IP ────────
+
+    /// <summary>
+    /// Creates an <see cref="HttpClient"/> pre-configured with:
+    /// - X-Test-RemoteIp = TestDeviceIp (so the webhook auth middleware sees the device IP)
+    /// - Authorization: Basic <TestDeviceUsername>:<TestDevicePassword>
+    /// </summary>
+    public HttpClient CreateDeviceClient()
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-RemoteIp", TestDeviceIp);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Basic", BasicAuthToken());
+        return client;
+    }
+
+    /// <summary>Returns a Base64-encoded "username:password" for HTTP Basic auth.</summary>
+    public static string BasicAuthToken() =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            $"{TestDeviceUsername}:{TestDevicePassword}"));
+
+    // ── Helper: query event log count ─────────────────────────────────────────
+
+    public async Task<int> CountEventLogsAsync(string? employeeCode = null)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AttendTrackDbContext>();
+        var query = db.HikvisionEventLogs.AsQueryable();
+        if (employeeCode is not null)
+            query = query.Where(e => e.EmployeeCode == employeeCode);
+        return await query.CountAsync();
+    }
+
+    // ── Seed data ─────────────────────────────────────────────────────────────
+
+    private static async Task SeedAsync(AttendTrackDbContext db)
+    {
+        var deptId  = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var empId   = EmployeeId.New();
+
+        var dept = Department.Create(deptId, "Engineering");
+        var shift = Shift.Create(shiftId, "Morning",
+            new TimeOnly(9, 0), new TimeOnly(18, 0), gracePeriodMinutes: 15);
+
+        // Use a cheap BCrypt work factor so test startup is fast
+        var pinHash = BCrypt.Net.BCrypt.HashPassword("123456", workFactor: 4);
+        var employee = Employee.Create(
+            id:             empId,
+            employeeCode:   TestEmployeeCode,
+            fullName:       "John Doe",
+            email:          "john.doe@test.com",
+            phone:          "9876543210",
+            kioskPin:       PinHash.From(pinHash),
+            departmentId:   deptId,
+            defaultShiftId: shiftId,
+            role:           UserRole.Employee,
+            joinedAt:       new DateOnly(2024, 1, 1));
+
+        var devicePasswordHash = BCrypt.Net.BCrypt.HashPassword(
+            TestDevicePassword, workFactor: 4);
+
+        var device = HikvisionDevice.Register(
+            id:                    Guid.NewGuid(),
+            deviceName:            "Test Access Controller",
+            model:                 "DS-K1T320MFWX",
+            serialNumber:          TestDeviceSerial,
+            ipAddress:             TestDeviceIp,
+            port:                  80,
+            adminUsername:         TestDeviceUsername,
+            adminPasswordHash:     devicePasswordHash,
+            adminPasswordProtected: null,
+            location:              "Test Lab",
+            firmwareVersion:       "V3.5.2 build 240701");
+
+        db.Departments.Add(dept);
+        db.Shifts.Add(shift);
+        db.Employees.Add(employee);
+        db.HikvisionDevices.Add(device);
+        await db.SaveChangesAsync();
+    }
+}
+
+/// <summary>
+/// Injects a middleware at the VERY START of the pipeline that reads X-Test-RemoteIp
+/// and sets <c>context.Connection.RemoteIpAddress</c> accordingly.
+/// This is the only safe way to spoof the TCP-level IP in <see cref="WebApplicationFactory"/>
+/// without touching the production middleware.
+/// </summary>
+internal sealed class TestRemoteIpStartupFilter : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+        app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (context.Request.Headers.TryGetValue("X-Test-RemoteIp", out var ipValue)
+                    && IPAddress.TryParse(ipValue, out var ip))
+                {
+                    context.Connection.RemoteIpAddress = ip;
+                }
+                await nextMiddleware(context);
+            });
+            next(app);
+        };
+}

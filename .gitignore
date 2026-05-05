@@ -1,0 +1,77 @@
+## Standard .NET gitignore
+
+# Build outputs
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / JetBrains
+.idea/
+*.DotSettings.user
+
+# dotnet CLI
+*.swp
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+nuget.config.user
+
+# ASP.NET
+appsettings.*.json
+!appsettings.Development.json
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+secrets.json
+
+# AttendTrack-specific exclusions
+/backups/
+/face-captures/
+/app/face-captures/
+/app/logs/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+coverage/
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Docker
+docker-compose.override.yml
+
+# Migrations (keep structure, exclude compiled)
+# (EF migrations .cs files ARE committed — only exclude designer artifacts)
+*.Designer.cs
+
+# IDE temp
+*.tmp
+*.bak

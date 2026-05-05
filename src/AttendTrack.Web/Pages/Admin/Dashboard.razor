@@ -1,0 +1,138 @@
+@page "/admin/dashboard"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5">
+        <div class="spinner-border text-primary"></div>
+    </div>
+}
+else
+{
+    <!-- Summary cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3">
+            <div class="card border-success">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <div class="text-muted small">Present</div>
+                            <div class="fs-3 fw-bold text-success">@PresentCount</div>
+                        </div>
+                        <i class="bi bi-person-check fs-2 text-success opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card border-danger">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <div class="text-muted small">Absent</div>
+                            <div class="fs-3 fw-bold text-danger">@AbsentCount</div>
+                        </div>
+                        <i class="bi bi-person-x fs-2 text-danger opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card border-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <div class="text-muted small">Late</div>
+                            <div class="fs-3 fw-bold text-warning">@LateCount</div>
+                        </div>
+                        <i class="bi bi-clock-history fs-2 text-warning opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card border-info">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <div class="text-muted small">On Break</div>
+                            <div class="fs-3 fw-bold text-info">@OnBreakCount</div>
+                        </div>
+                        <i class="bi bi-cup-hot fs-2 text-info opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device status -->
+    <div class="card mb-4">
+        <div class="card-header fw-semibold"><i class="bi bi-cpu me-1"></i>Biometric Devices</div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>Device</th><th>Location</th><th>Status</th><th>Last Event</th><th>Enrolled</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in _devices)
+                    {
+                        var online = d.LastEventReceivedAt.HasValue &&
+                                     d.LastEventReceivedAt.Value > DateTime.UtcNow.AddMinutes(-5);
+                        <tr>
+                            <td>@d.DeviceName <span class="text-muted small">(@d.Model)</span></td>
+                            <td>@d.Location</td>
+                            <td>
+                                @if (online)
+                                { <span class="badge bg-success">ONLINE</span> }
+                                else
+                                { <span class="badge bg-secondary">OFFLINE</span> }
+                            </td>
+                            <td class="small text-muted">
+                                @(d.LastEventReceivedAt.HasValue
+                                    ? IstTimeHelper.ToIst(d.LastEventReceivedAt.Value)
+                                    : "—")
+                            </td>
+                            <td>@d.EnrolledEmployeeCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent attendance -->
+    <div class="card">
+        <div class="card-header fw-semibold">
+            <i class="bi bi-clock-history me-1"></i>Recent Attendance
+            <span class="badge bg-secondary ms-1">Live</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Employee</th><th>Check-In</th><th>Check-Out</th><th>Hours</th><th>Source</th><th>Mode</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _recentRecords)
+                    {
+                        <tr class="@(r.HasViolation ? "table-warning" : "")">
+                            <td>@r.EmployeeName <span class="text-muted small">(@r.EmployeeCode)</span></td>
+                            <td>@(r.CheckInTimeIst ?? "—")</td>
+                            <td>@(r.CheckOutTimeIst ?? "—")</td>
+                            <td>@r.TotalHoursWorked.ToString("F1")</td>
+                            <td>
+                                @if (r.CheckInSource == "Hikvision")
+                                { <i class="bi bi-fingerprint text-primary" title="Hikvision Biometric"></i> }
+                                else
+                                { <i class="bi bi-keyboard text-secondary" title="Kiosk PIN"></i> }
+                            </td>
+                            <td class="small text-muted">@(r.VerifyMode ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

@@ -1,0 +1,133 @@
+@page "/admin/employees"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+@using AttendTrack.Domain.Entities
+@using AttendTrack.Domain.Enums
+
+<h4 class="mb-4"><i class="bi bi-people me-2"></i>Employees</h4>
+
+<div class="d-flex gap-2 mb-3">
+    <input class="form-control w-auto" placeholder="Search…" @bind="_search" @bind:event="oninput" />
+    <button class="btn btn-primary" @onclick="ShowAddModal">
+        <i class="bi bi-person-plus"></i> Add Employee
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Code</th><th>Name</th><th>Email</th><th>Role</th>
+                        <th>Biometric</th><th>Status</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var emp in FilteredEmployees)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@emp.EmployeeCode</td>
+                            <td>@emp.FullName</td>
+                            <td class="text-muted small">@emp.Email</td>
+                            <td><span class="badge bg-secondary">@emp.Role</span></td>
+                            <td class="text-center">
+                                @if (emp.IsBiometricEnrolled)
+                                { <i class="bi bi-fingerprint text-success fs-5" title="Enrolled"></i> }
+                                else
+                                { <i class="bi bi-fingerprint text-muted fs-5" title="Not enrolled"></i> }
+                            </td>
+                            <td>
+                                @if (emp.IsActive)
+                                { <span class="badge bg-success">Active</span> }
+                                else
+                                { <span class="badge bg-secondary">Inactive</span> }
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary me-1"
+                                        @onclick="() => ShowEditModal(emp)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                @if (emp.IsActive)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => DeactivateAsync(emp.EmployeeId)">
+                                        <i class="bi bi-person-dash"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-muted small">@FilteredEmployees.Count() employees</div>
+    </div>
+}
+
+<!-- Add / Edit Modal -->
+@if (_showModal)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.4);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editId.HasValue ? "Edit Employee" : "Add Employee")</h5>
+                    <button class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <div class="alert alert-danger py-1">@_formError</div>
+                    }
+                    <div class="row g-3">
+                        @if (!_editId.HasValue)
+                        {
+                            <div class="col-md-4">
+                                <label class="form-label">Employee Code *</label>
+                                <input class="form-control" @bind="_fCode" />
+                            </div>
+                        }
+                        <div class="col-md-4">
+                            <label class="form-label">Full Name *</label>
+                            <input class="form-control" @bind="_fName" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Email *</label>
+                            <input class="form-control" type="email" @bind="_fEmail" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Phone</label>
+                            <input class="form-control" @bind="_fPhone" />
+                        </div>
+                        @if (!_editId.HasValue)
+                        {
+                            <div class="col-md-4">
+                                <label class="form-label">PIN (6 digits) *</label>
+                                <input class="form-control" type="password" maxlength="6" @bind="_fPin" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Role *</label>
+                                <select class="form-select" @bind="_fRoleStr">
+                                    @foreach (var r in Enum.GetNames<UserRole>())
+                                    { <option>@r</option> }
+                                </select>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveEmployeeAsync">
+                        @(_editId.HasValue ? "Update" : "Create")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}

@@ -1,0 +1,98 @@
+using AttendTrack.Domain.Entities;
+using AttendTrack.Domain.Interfaces.Repositories;
+using Microsoft.AspNetCore.Components;
+
+namespace AttendTrack.Web.Pages.Admin;
+
+public sealed partial class HikvisionDevices : ComponentBase
+{
+    [Inject] private ISender Sender { get; set; } = default!;
+    [Inject] private IHikvisionDeviceRepository DeviceRepo { get; set; } = default!;
+    [Inject] private IEmployeeRepository EmployeeRepo { get; set; } = default!;
+
+    private IReadOnlyList<HikvisionDevice> _devices = [];
+    private Dictionary<string, IReadOnlyList<HikvisionEventLog>> _eventLogs = [];
+    private bool _loading = true;
+
+    // Enroll panel state
+    private Guid? _enrollPanelDeviceId;
+    private string _enrollCode = string.Empty;
+    private string _enrollMessage = string.Empty;
+    private bool _enrollSuccess;
+
+    // Sync feedback
+    private string _syncMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+        => await LoadDataAsync();
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        _devices = await DeviceRepo.GetActiveDevicesAsync();
+
+        var logDict = new Dictionary<string, IReadOnlyList<HikvisionEventLog>>();
+        foreach (var device in _devices)
+        {
+            var logs = await DeviceRepo.GetRecentEventLogsAsync(device.SerialNumber, 20);
+            logDict[device.SerialNumber] = logs;
+        }
+        _eventLogs = logDict;
+        _loading = false;
+    }
+
+    private void ShowEnrollPanel(Guid deviceId)
+    {
+        _enrollPanelDeviceId = _enrollPanelDeviceId == deviceId ? null : deviceId;
+        _enrollMessage = string.Empty;
+        _enrollCode = string.Empty;
+    }
+
+    private async Task EnrollEmployeeAsync(Guid deviceId)
+    {
+        if (string.IsNullOrWhiteSpace(_enrollCode))
+        {
+            _enrollMessage = "Please enter an employee code.";
+            _enrollSuccess = false;
+            return;
+        }
+
+        var employee = await EmployeeRepo.GetByCodeAsync(_enrollCode);
+        if (employee is null)
+        {
+            _enrollMessage = $"Employee code '{_enrollCode}' not found.";
+            _enrollSuccess = false;
+            return;
+        }
+
+        var result = await Sender.Send(new EnrollEmployeeToDeviceCommand(
+            EmployeeId: employee.Id.Value,
+            DeviceId: deviceId,
+            FacePhotoBytes: []));
+
+        _enrollSuccess = result.Success;
+        _enrollMessage = result.Success
+            ? "Employee enrolled successfully."
+            : $"Enrollment failed: {result.ErrorMessage}";
+    }
+
+    private async Task SyncDeviceAsync(Guid deviceId)
+    {
+        _syncMessage = "Syncing...";
+        var result = await Sender.Send(new SyncDeviceEventsCommand(deviceId, DateTime.UtcNow.AddHours(-1)));
+        _syncMessage = $"Sync complete — {result.EventsProcessed} events processed.";
+        await LoadDataAsync();
+        StateHasChanged();
+        await Task.Delay(3000);
+        _syncMessage = string.Empty;
+    }
+
+    private static string AttendanceStatusBadge(string status) => status switch
+    {
+        "checkIn"  => "bg-success",
+        "checkOut" => "bg-secondary",
+        "breakIn"  => "bg-warning text-dark",
+        "breakOut" => "bg-info text-dark",
+        _          => "bg-light text-dark"
+    };
+}

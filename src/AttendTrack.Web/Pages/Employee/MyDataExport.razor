@@ -1,0 +1,34 @@
+@page "/employee/my-data"
+@attribute [Authorize]
+@layout AttendTrack.Web.Layouts.MainLayout
+
+<h4 class="mb-4"><i class="bi bi-shield-lock me-2"></i>My Data (DPDP Export)</h4>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-body">
+        <h6>Your Data Rights</h6>
+        <p class="text-muted small">
+            Under the <strong>Digital Personal Data Protection Act 2023</strong>, you have the right to access
+            a copy of all personal data held by the organisation.
+            Click the button below to download your complete attendance and personal data as a JSON file.
+        </p>
+        <ul class="small text-muted">
+            <li>Employee profile and contact details</li>
+            <li>Complete attendance history</li>
+            <li>Break records</li>
+            <li>Audit trail of changes to your data</li>
+        </ul>
+        <button class="btn btn-primary" @onclick="ExportAsync" disabled="@_exporting">
+            @if (_exporting)
+            { <span class="spinner-border spinner-border-sm me-2"></span> }
+            else
+            { <i class="bi bi-cloud-download me-2"></i> }
+            Export My Data (JSON)
+        </button>
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert alert-success mt-3 py-2 small">@_message</div>
+        }
+    </div>
+</div>
+
