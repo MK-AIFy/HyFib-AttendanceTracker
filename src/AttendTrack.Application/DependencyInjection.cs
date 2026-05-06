@@ -22,15 +22,16 @@ public static class DependencyInjection
             cfg.RegisterServicesFromAssembly(assembly);
         });
 
-        // Pipeline behaviours — ORDER MATTERS:
-        //  1. ConcurrencyBehaviour  — converts DbUpdateConcurrencyException → 409
-        //  2. LoggingBehaviour      — times the request
-        //  3. ValidationBehaviour   — FluentValidation before handler runs
-        //  4. AuditBehaviour        — writes AuditLog after handler completes
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ConcurrencyBehaviour<,>));
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehaviour<,>));
+        // Pipeline behaviours — ORDER MATTERS.
+        // MediatR executes them in registration order (first registered = outermost).
+        // Desired runtime flow:
+        //   request → Validation → Logging → Audit → Concurrency → Handler
+        //   Validation runs first so we never log/audit invalid commands.
+        //   Concurrency wraps the handler closest so it catches DbUpdate* and maps to 409.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditBehaviour<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ConcurrencyBehaviour<,>));
 
         // FluentValidation — register all validators in this assembly
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);

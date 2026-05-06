@@ -1,17 +1,22 @@
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Enums;
 using AttendTrack.Domain.Interfaces.Repositories;
+using AttendTrack.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
 
 namespace AttendTrack.Web.Pages.Admin;
 
 public sealed partial class Employees : ComponentBase
 {
-    [Inject] private ISender            Sender      { get; set; } = default!;
+    [Inject] private ISender             Sender      { get; set; } = default!;
     [Inject] private IEmployeeRepository EmployeeRepo { get; set; } = default!;
-    [Inject] private IShiftRepository   ShiftRepo   { get; set; } = default!;
+    [Inject] private IShiftRepository    ShiftRepo   { get; set; } = default!;
+    [Inject] private AttendTrackDbContext Db          { get; set; } = default!;
 
-    private IReadOnlyList<EmployeeDto> _employees = [];
+    private IReadOnlyList<EmployeeDto>  _employees   = [];
+    private IReadOnlyList<Shift>        _shifts      = [];
+    private IReadOnlyList<Department>   _departments = [];
     private string _search = string.Empty;
     private bool _loading = true;
 
@@ -23,7 +28,9 @@ public sealed partial class Employees : ComponentBase
     private string _fEmail = string.Empty;
     private string _fPhone = string.Empty;
     private string _fPin   = string.Empty;
-    private string _fRoleStr = nameof(UserRole.Employee);
+    private string _fRoleStr    = nameof(UserRole.Employee);
+    private Guid   _fShiftId;
+    private Guid   _fDeptId;
     private string _formError = string.Empty;
 
     private IEnumerable<EmployeeDto> FilteredEmployees =>
@@ -48,6 +55,9 @@ public sealed partial class Employees : ComponentBase
                 e.Role.ToString(), e.IsActive, e.IsBiometricEnrolled,
                 e.BadgeRfidCard, e.JoinedAt.ToString("dd MMM yyyy")))
             .ToList();
+
+        _shifts      = await Db.Shifts.Where(s => s.IsActive).OrderBy(s => s.StartTime).ToListAsync();
+        _departments = await Db.Departments.Where(d => d.IsActive).OrderBy(d => d.Name).ToListAsync();
         _loading = false;
     }
 
@@ -56,6 +66,8 @@ public sealed partial class Employees : ComponentBase
         _editId = null;
         _fCode = _fName = _fEmail = _fPhone = _fPin = _formError = string.Empty;
         _fRoleStr = nameof(UserRole.Employee);
+        _fShiftId = _shifts.FirstOrDefault()?.Id ?? Guid.Empty;
+        _fDeptId  = _departments.FirstOrDefault()?.Id ?? Guid.Empty;
         _showModal = true;
     }
 
@@ -92,19 +104,19 @@ public sealed partial class Employees : ComponentBase
                 string.IsNullOrWhiteSpace(_fEmail) || _fPin.Length != 6)
             { _formError = "Code, name, email and a 6-digit PIN are required."; return; }
 
+            if (_fShiftId == Guid.Empty)
+            { _formError = "Please select a shift."; return; }
+
+            if (_fDeptId == Guid.Empty)
+            { _formError = "Please select a department."; return; }
+
             if (!Enum.TryParse<UserRole>(_fRoleStr, out var role))
                 role = UserRole.Employee;
 
-            // Use first available shift/department as defaults
-            var shifts = await ShiftRepo.GetAllActiveAsync();
-            var defaultShift = shifts.FirstOrDefault();
-            if (defaultShift is null)
-            { _formError = "No shifts configured. Please create a shift first."; return; }
-
             await Sender.Send(new CreateEmployeeCommand(
                 _fCode, _fName, _fEmail, _fPhone, _fPin,
-                Guid.Empty,              // DepartmentId — placeholder (no dept mgmt UI yet)
-                defaultShift.Id,
+                _fDeptId,
+                _fShiftId,
                 role,
                 IstTimeHelper.TodayIst));
         }

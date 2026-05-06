@@ -118,6 +118,22 @@ else
                                     { <option>@r</option> }
                                 </select>
                             </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Department *</label>
+                                <select class="form-select" @bind="_fDeptId">
+                                    <option value="@Guid.Empty">— Select —</option>
+                                    @foreach (var d in _departments)
+                                    { <option value="@d.Id">@d.Name</option> }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Shift *</label>
+                                <select class="form-select" @bind="_fShiftId">
+                                    <option value="@Guid.Empty">— Select —</option>
+                                    @foreach (var s in _shifts)
+                                    { <option value="@s.Id">@s.Name</option> }
+                                </select>
+                            </div>
                         }
                     </div>
                 </div>

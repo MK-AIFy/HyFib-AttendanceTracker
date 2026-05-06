@@ -61,15 +61,28 @@ else
                 {
                     <div class="border rounded p-3 mb-3 bg-light">
                         <h6>Enroll Employee</h6>
-                        <div class="input-group mb-2" style="max-width:400px;">
-                            <input class="form-control" placeholder="Employee Code" @bind="_enrollCode" />
-                            <button class="btn btn-primary" @onclick="() => EnrollEmployeeAsync(device.Id)">
-                                <i class="bi bi-person-check"></i> Enroll
-                            </button>
+                        <div class="row g-2 align-items-end" style="max-width:700px;">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1">Employee Code</label>
+                                <input class="form-control" placeholder="e.g. EMP-001" @bind="_enrollCode" />
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small mb-1">Face Photo (JPEG/PNG, &le; 5&nbsp;MB)</label>
+                                <InputFile class="form-control" OnChange="OnFaceFileSelected" accept="image/jpeg,image/png" />
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" @onclick="() => EnrollEmployeeAsync(device.Id)" disabled="@(_enrollFaceBytes.Length == 0)">
+                                    <i class="bi bi-person-check"></i> Enroll
+                                </button>
+                            </div>
                         </div>
+                        @if (_enrollFaceBytes.Length > 0)
+                        {
+                            <div class="small text-muted mt-2">Selected: @_enrollFaceFilename (@(_enrollFaceBytes.Length / 1024) KB)</div>
+                        }
                         @if (!string.IsNullOrEmpty(_enrollMessage))
                         {
-                            <div class="alert alert-sm @(_enrollSuccess ? "alert-success" : "alert-danger") py-1">
+                            <div class="alert alert-sm @(_enrollSuccess ? "alert-success" : "alert-danger") py-1 mt-2 mb-0">
                                 @_enrollMessage
                             </div>
                         }

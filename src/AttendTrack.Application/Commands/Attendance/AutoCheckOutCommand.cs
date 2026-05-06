@@ -32,8 +32,24 @@ public sealed class AutoCheckOutHandler : IRequestHandler<AutoCheckOutCommand>
 
     public async Task Handle(AutoCheckOutCommand cmd, CancellationToken ct)
     {
-        var record = await _attRepo.GetByIdAsync(cmd.AttendanceRecordId, ct).ConfigureAwait(false)
-            ?? throw new DomainException($"Attendance record {cmd.AttendanceRecordId} not found");
+        var record = await _attRepo.GetByIdAsync(cmd.AttendanceRecordId, ct).ConfigureAwait(false);
+        if (record is null)
+        {
+            // [3E] Idempotent: another scheduler instance or manual checkout may have
+            // resolved this record already. Log and return rather than throwing.
+            _logger.LogInformation(
+                "AutoCheckOut skipped: record {Id} not found (already resolved)",
+                cmd.AttendanceRecordId);
+            return;
+        }
+
+        if (record.CheckOutTime is not null)
+        {
+            _logger.LogInformation(
+                "AutoCheckOut skipped: record {Id} already checked out at {Time}",
+                cmd.AttendanceRecordId, record.CheckOutTime);
+            return;
+        }
 
         record.ForceAutoCheckOut(cmd.AutoCheckOutTimeUtc);
         _attRepo.Update(record);

@@ -59,6 +59,7 @@ public sealed class HikvisionPollingService : BackgroundService
         var deviceRepo   = scope.ServiceProvider.GetRequiredService<IHikvisionDeviceRepository>();
         var isapiService = scope.ServiceProvider.GetRequiredService<IHikvisionIsapiService>();
         var mediator     = scope.ServiceProvider.GetRequiredService<IMediator>();
+        var uow          = scope.ServiceProvider.GetRequiredService<AttendTrack.Domain.Interfaces.IUnitOfWork>();
 
         var devices = await deviceRepo.GetActiveDevicesAsync(ct);
         var gapThreshold = TimeSpan.FromMinutes(_options.WebhookGapMinutes);
@@ -103,6 +104,8 @@ public sealed class HikvisionPollingService : BackgroundService
             }
 
             await deviceRepo.UpdateLastPollAsync(device.Id, DateTime.UtcNow, ct);
+            // [3F] Persist LastPollAt — repo only mutates the tracked entity.
+            await uow.SaveChangesAsync(ct);
 
             _logger.LogInformation(
                 "Poll complete for {Serial}: {P} processed, {S} skipped",

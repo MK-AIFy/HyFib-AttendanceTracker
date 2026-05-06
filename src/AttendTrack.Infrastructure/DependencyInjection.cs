@@ -26,6 +26,8 @@ public static class DependencyInjection
         // ── Options ───────────────────────────────────────────────────────────
         services.Configure<HikvisionOptions>(
             configuration.GetSection(HikvisionOptions.SectionName));
+        services.Configure<JwtOptions>(
+            configuration.GetSection(JwtOptions.SectionName));
 
         // ── EF Core + PostgreSQL ──────────────────────────────────────────────
         services.AddDbContext<AttendTrackDbContext>(opts =>
@@ -48,23 +50,24 @@ public static class DependencyInjection
         // ── Password Hasher (BCrypt, work factor 12) ──────────────────────────
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
 
+        // ── JWT Token Service ─────────────────────────────────────────────────
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
         // ── Data Protection (for ISAPI credential encryption) ─────────────────
         services.AddDataProtection()
             .SetApplicationName("AttendTrack");
 
         // ── Hikvision ISAPI Service ───────────────────────────────────────────
-        services.AddScoped<IHikvisionIsapiService, HikvisionIsapiService>();
-
-        // Register Func<string, string> for password protection
-        // Used by RegisterHikvisionDeviceHandler to encrypt the admin password
-        services.AddScoped<Func<string, string>>(sp =>
-        {
-            var isapiService = sp.GetRequiredService<HikvisionIsapiService>();
-            return isapiService.ProtectPassword;
-        });
-
-        // Also register the concrete type for the above to resolve
+        // Register the concrete type as Scoped, then expose it via the interface.
+        // Single registration avoids the dual-instance footgun where DI resolves
+        // a different concrete each time the interface is requested.
         services.AddScoped<HikvisionIsapiService>();
+        services.AddScoped<IHikvisionIsapiService>(sp =>
+            sp.GetRequiredService<HikvisionIsapiService>());
+
+        // Func<string, string> for password protection — used by RegisterHikvisionDeviceHandler
+        services.AddScoped<Func<string, string>>(sp =>
+            sp.GetRequiredService<HikvisionIsapiService>().ProtectPassword);
 
         // ── [Gap 7] Redis + Distributed Cache Wrapper ─────────────────────────
         var redisConnectionString = configuration.GetConnectionString("Redis");
@@ -79,7 +82,9 @@ public static class DependencyInjection
             services.AddDistributedMemoryCache();
         }
         services.AddMemoryCache();
-        services.AddSingleton<IDistributedCacheWrapper, DistributedCacheWrapper>();
+        // [Gap 7] Scoped — wraps an IDistributedCache (Redis or in-mem) plus an
+        // IMemoryCache fallback so we degrade gracefully when Redis is unreachable.
+        services.AddScoped<IDistributedCacheWrapper, DistributedCacheWrapper>();
 
         // ── [Gap 6] DPDP Data Subject Service ────────────────────────────────
         services.AddScoped<IDataSubjectService, DataSubjectService>();
@@ -90,6 +95,11 @@ public static class DependencyInjection
         services.AddHostedService<HourlyTrackerService>();          // [Gap 4]
         services.AddHostedService<MissedPunchDetectorService>();    // [Gap 1]
         services.AddHostedService<DataRetentionPurgeService>();     // [Gap 6 / Gap 15]
+
+        // [Gap 12] Kiosk heartbeat: registry tracks kiosks seen since startup,
+        // background service polls Redis every 60s and warns when a kiosk goes silent.
+        services.AddSingleton<KioskRegistry>();
+        services.AddHostedService<KioskOfflineAlertService>();
 
         // ── Health Checks ─────────────────────────────────────────────────────
         var healthChecksBuilder = services.AddHealthChecks()

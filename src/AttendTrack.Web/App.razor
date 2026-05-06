@@ -1,8 +1,23 @@
-<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(Layouts.MainLayout)" />
-    </Found>
-    <NotFound>
-        <h1>Page not found</h1>
-    </NotFound>
-</Router>
+@inject NavigationManager Nav
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layouts.MainLayout)">
+                <NotAuthorized>
+                    @{
+                        Nav.NavigateTo("/login", forceLoad: true);
+                    }
+                </NotAuthorized>
+                <Authorizing>
+                    <p class="p-4 text-muted">Authorizing…</p>
+                </Authorizing>
+            </AuthorizeRouteView>
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(Layouts.MainLayout)">
+                <h4 class="m-4">Page not found</h4>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

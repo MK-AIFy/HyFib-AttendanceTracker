@@ -28,6 +28,13 @@
 {
     <div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary"></div></div>
 }
+else if (!_searched)
+{
+    <div class="alert alert-light border">
+        <i class="bi bi-info-circle me-1"></i>
+        Pick a date range and click <strong>Load</strong> to view shift violations.
+    </div>
+}
 else if (_violations.Count == 0 && _searched)
 {
     <div class="alert alert-success"><i class="bi bi-check-circle me-1"></i>No shift violations in the selected period.</div>

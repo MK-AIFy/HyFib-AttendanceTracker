@@ -1,11 +1,14 @@
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 
 namespace AttendTrack.Web.Pages.Admin;
 
 public sealed partial class HikvisionDevices : ComponentBase
 {
+    private const long MaxFaceBytes = 5 * 1024 * 1024; // 5 MB
+
     [Inject] private ISender Sender { get; set; } = default!;
     [Inject] private IHikvisionDeviceRepository DeviceRepo { get; set; } = default!;
     [Inject] private IEmployeeRepository EmployeeRepo { get; set; } = default!;
@@ -19,6 +22,8 @@ public sealed partial class HikvisionDevices : ComponentBase
     private string _enrollCode = string.Empty;
     private string _enrollMessage = string.Empty;
     private bool _enrollSuccess;
+    private byte[] _enrollFaceBytes = Array.Empty<byte>();
+    private string _enrollFaceFilename = string.Empty;
 
     // Sync feedback
     private string _syncMessage = string.Empty;
@@ -46,6 +51,31 @@ public sealed partial class HikvisionDevices : ComponentBase
         _enrollPanelDeviceId = _enrollPanelDeviceId == deviceId ? null : deviceId;
         _enrollMessage = string.Empty;
         _enrollCode = string.Empty;
+        _enrollFaceBytes = Array.Empty<byte>();
+        _enrollFaceFilename = string.Empty;
+    }
+
+    private async Task OnFaceFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+
+        if (file.Size > MaxFaceBytes)
+        {
+            _enrollMessage = $"File too large ({file.Size / 1024} KB). Max 5 MB.";
+            _enrollSuccess = false;
+            _enrollFaceBytes = Array.Empty<byte>();
+            return;
+        }
+
+        using var ms = new MemoryStream();
+        await using (var stream = file.OpenReadStream(MaxFaceBytes))
+        {
+            await stream.CopyToAsync(ms);
+        }
+        _enrollFaceBytes = ms.ToArray();
+        _enrollFaceFilename = file.Name;
+        _enrollMessage = string.Empty;
     }
 
     private async Task EnrollEmployeeAsync(Guid deviceId)
@@ -65,15 +95,30 @@ public sealed partial class HikvisionDevices : ComponentBase
             return;
         }
 
+        if (_enrollFaceBytes.Length == 0)
+        {
+            _enrollMessage = "Please select a face photo before enrolling.";
+            _enrollSuccess = false;
+            return;
+        }
+
         var result = await Sender.Send(new EnrollEmployeeToDeviceCommand(
             EmployeeId: employee.Id.Value,
             DeviceId: deviceId,
-            FacePhotoBytes: []));
+            FacePhotoBytes: _enrollFaceBytes));
 
         _enrollSuccess = result.Success;
         _enrollMessage = result.Success
             ? "Employee enrolled successfully."
             : $"Enrollment failed: {result.ErrorMessage}";
+
+        if (result.Success)
+        {
+            _enrollFaceBytes = Array.Empty<byte>();
+            _enrollFaceFilename = string.Empty;
+            _enrollCode = string.Empty;
+            await LoadDataAsync();
+        }
     }
 
     private async Task SyncDeviceAsync(Guid deviceId)

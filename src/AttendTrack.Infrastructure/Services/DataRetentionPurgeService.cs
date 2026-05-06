@@ -41,7 +41,7 @@ public sealed class DataRetentionPurgeService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "DataRetentionPurgeService started (daily at {:D2}:00 IST)", PurgeHourIst);
+            "DataRetentionPurgeService started (daily at {PurgeHourIst:D2}:00 IST)", PurgeHourIst);
 
         while (!stoppingToken.IsCancellationRequested)
         {

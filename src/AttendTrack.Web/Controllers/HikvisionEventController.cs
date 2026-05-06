@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using RouteAttribute = Microsoft.AspNetCore.Mvc.RouteAttribute;
 
@@ -36,6 +37,7 @@ public sealed class HikvisionEventController : ControllerBase
     [HttpPost("events")]
     [DisableRequestSizeLimit]         // Multipart with JPEG can be large
     [AllowAnonymous]                  // IP + BCrypt auth done in middleware
+    [EnableRateLimiting("webhook")]
     public async Task<IActionResult> ReceiveEvent(CancellationToken ct)
     {
         string? xmlPayload   = null;

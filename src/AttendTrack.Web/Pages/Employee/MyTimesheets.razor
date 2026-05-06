@@ -27,33 +27,27 @@ else
                     <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Hours</th><th>Break</th><th>Status</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var day in _days)
+                    @foreach (var r in _records)
                     {
-                        @foreach (var r in day.Records)
-                        {
-                            <tr>
-                                <td>@r.WorkDate</td>
-                                <td>@(r.CheckInTimeIst ?? "—")</td>
-                                <td>@(r.CheckOutTimeIst ?? "—")</td>
-                                <td>@r.TotalHoursWorked.ToString("F1")</td>
-                                <td>@r.BreakDurationMinutes min</td>
-                                <td><span class="badge @StatusBadge(r.Status)">@r.Status</span></td>
-                            </tr>
-                        }
-                        @if (!day.Records.Any())
-                        {
-                            <tr class="table-secondary">
-                                <td>@day.Date</td>
-                                <td colspan="5" class="text-muted">No record</td>
-                            </tr>
-                        }
+                        <tr>
+                            <td>@r.WorkDate</td>
+                            <td>@(r.CheckInTimeIst ?? "—")</td>
+                            <td>@(r.CheckOutTimeIst ?? "—")</td>
+                            <td>@r.TotalHoursWorked.ToString("F1")</td>
+                            <td>@r.BreakDurationMinutes min</td>
+                            <td><span class="badge @StatusBadge(r.Status)">@r.Status</span></td>
+                        </tr>
+                    }
+                    @if (_records.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-4">No records for this week</td></tr>
                     }
                 </tbody>
                 <tfoot class="table-light">
                     <tr>
                         <th>Total</th>
                         <td colspan="2"></td>
-                        <th>@_days.SelectMany(d => d.Records).Sum(r => r.TotalHoursWorked).ToString("F1") h</th>
+                        <th>@_records.Sum(r => r.TotalHoursWorked).ToString("F1") h</th>
                         <td colspan="2"></td>
                     </tr>
                 </tfoot>

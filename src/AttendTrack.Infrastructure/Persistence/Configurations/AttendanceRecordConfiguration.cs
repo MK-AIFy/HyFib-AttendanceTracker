@@ -68,7 +68,7 @@ public sealed class AttendanceRecordConfiguration : IEntityTypeConfiguration<Att
                 ts  => (int)ts.TotalMinutes,
                 min => TimeSpan.FromMinutes(min))
             .HasColumnName("break_duration_minutes")
-            .HasDefaultValue(0);
+            .HasDefaultValueSql("0");
 
         // EF Core navigation via backing fields
         b.HasMany(r => r.HourlySlots)

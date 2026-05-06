@@ -29,7 +29,7 @@ public sealed class HikvisionEventLogConfiguration : IEntityTypeConfiguration<Hi
 
         // Partial index for efficient unprocessed event queries
         b.HasIndex(e => e.IsProcessed)
-            .HasFilter("is_processed = false");
+            .HasFilter("\"IsProcessed\" = false");
 
         b.HasOne<AttendanceRecord>()
             .WithMany()
