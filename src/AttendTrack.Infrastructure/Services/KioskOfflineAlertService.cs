@@ -80,9 +80,8 @@ public sealed class KioskOfflineAlertService : BackgroundService
 
         foreach (var id in ids)
         {
-            // We just need to know if the key exists — payload type doesn't matter.
-            var beacon = await cache.GetAsync<object>(HeartbeatKeyPrefix + id, ct);
-            if (beacon is null)
+            var present = await cache.KeyExistsAsync(HeartbeatKeyPrefix + id, ct);
+            if (!present)
             {
                 if (_alreadyAlerted.Add(id))
                     _logger.LogWarning("Kiosk OFFLINE: {DeviceId} (no heartbeat in last 90s)", id);

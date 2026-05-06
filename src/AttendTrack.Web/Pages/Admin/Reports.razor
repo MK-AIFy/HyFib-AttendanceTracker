@@ -1,5 +1,5 @@
 @page "/admin/reports"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "SuperAdmin,Admin,HRManager,Manager")]
 @layout AttendTrack.Web.Layouts.MainLayout
 
 <h4 class="mb-4"><i class="bi bi-bar-chart me-2"></i>Reports</h4>

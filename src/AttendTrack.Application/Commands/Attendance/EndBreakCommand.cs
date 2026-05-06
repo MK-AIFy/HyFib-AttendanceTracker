@@ -9,11 +9,14 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Application.Commands.Attendance;
 
-/// <summary>Ends the active break for an employee via Blazor kiosk.</summary>
+/// <summary>
+/// Ends the active break for an employee via Blazor kiosk.
+/// Resolves the open break server-side from the employee's attendance record
+/// (no client-supplied BreakRecordId so the kiosk UI can stay simple).
+/// </summary>
 public sealed record EndBreakCommand(
     string EmployeeCode,
-    string Pin,
-    Guid   BreakRecordId) : IRequest, IAuditableRequest;
+    string Pin) : IRequest, IAuditableRequest;
 
 public sealed class EndBreakHandler : IRequestHandler<EndBreakCommand>
 {
@@ -49,11 +52,14 @@ public sealed class EndBreakHandler : IRequestHandler<EndBreakCommand>
         var record = await _attRepo.GetByEmployeeAndDateAsync(employee.Id, today, ct).ConfigureAwait(false)
             ?? throw new NotCheckedInException(employee.Id.Value);
 
-        record.EndBreak(cmd.BreakRecordId, PunchSource.BlazorKiosk);
+        var activeBreak = record.Breaks.FirstOrDefault(b => b.IsActive)
+            ?? throw new NotCheckedInException(employee.Id.Value);
+
+        record.EndBreak(activeBreak.Id, PunchSource.BlazorKiosk);
         _attRepo.Update(record);
         await _uow.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        _logger.LogInformation("Break ended: {Code} breakId={Id}", cmd.EmployeeCode, cmd.BreakRecordId);
+        _logger.LogInformation("Break ended: {Code} breakId={Id}", cmd.EmployeeCode, activeBreak.Id);
     }
 }
 

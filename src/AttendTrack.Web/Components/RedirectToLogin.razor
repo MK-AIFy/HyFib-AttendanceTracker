@@ -1,0 +1,14 @@
+@inject NavigationManager Nav
+
+@code {
+    // Forces a top-level redirect to /login from inside <NotAuthorized>.
+    // Calling Nav.NavigateTo directly inside the render delegate throws
+    // NavigationException during prerender, so defer to OnAfterRender.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Nav.NavigateTo("/login", forceLoad: true);
+        }
+    }
+}

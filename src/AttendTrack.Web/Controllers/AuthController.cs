@@ -130,6 +130,20 @@ public sealed class AuthController : ControllerBase
         return Ok(new { status = "logged_out" });
     }
 
+    /// <summary>
+    /// Form-post sign-out used by the sidebar logout button. Clears the cookie and
+    /// redirects to /login. Antiforgery is intentionally bypassed so the static-render
+    /// Blazor sidebar can post without a runtime token round-trip.
+    /// </summary>
+    [HttpPost("logout-form")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> LogoutForm()
+    {
+        await HttpContext.SignOutAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme).ConfigureAwait(false);
+        return LocalRedirect("/login");
+    }
+
     [HttpGet("me")]
     [Authorize]
     public IActionResult Me() => Ok(new

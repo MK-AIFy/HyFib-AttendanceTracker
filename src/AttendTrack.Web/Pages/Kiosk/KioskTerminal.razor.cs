@@ -101,7 +101,7 @@ public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
         if (!ValidateInput()) return;
         try
         {
-            await Sender.Send(new EndBreakCommand(_employeeCode, _pin, Guid.Empty));
+            await Sender.Send(new EndBreakCommand(_employeeCode, _pin));
             ShowSuccess("Break ended.");
         }
         catch (Exception ex) { HandleError(ex); }

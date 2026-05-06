@@ -1,5 +1,5 @@
 @page "/admin/shifts"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "SuperAdmin,Admin,HRManager,Manager")]
 @layout AttendTrack.Web.Layouts.MainLayout
 @using AttendTrack.Domain.Entities
 

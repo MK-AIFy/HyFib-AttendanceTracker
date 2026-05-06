@@ -100,3 +100,40 @@ public sealed class EnrollEmployeeToDeviceCommandValidator
             .WithMessage("FacePhotoBytes must be 5 MB or smaller.");
     }
 }
+
+public sealed class CheckOutCommandValidator : AbstractValidator<CheckOutCommand>
+{
+    public CheckOutCommandValidator()
+    {
+        RuleFor(x => x.EmployeeCode).NotEmpty().MaximumLength(20);
+        RuleFor(x => x.Pin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
+    }
+}
+
+public sealed class StartBreakCommandValidator : AbstractValidator<StartBreakCommand>
+{
+    public StartBreakCommandValidator()
+    {
+        RuleFor(x => x.EmployeeCode).NotEmpty().MaximumLength(20);
+        RuleFor(x => x.Pin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
+        RuleFor(x => x.BreakType).IsInEnum();
+    }
+}
+
+public sealed class EndBreakCommandValidator : AbstractValidator<EndBreakCommand>
+{
+    public EndBreakCommandValidator()
+    {
+        RuleFor(x => x.EmployeeCode).NotEmpty().MaximumLength(20);
+        RuleFor(x => x.Pin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
+    }
+}
+
+public sealed class ExportEmployeeDataCommandValidator
+    : AbstractValidator<ExportEmployeeDataCommand>
+{
+    public ExportEmployeeDataCommandValidator()
+    {
+        RuleFor(x => x.EmployeeId).NotEqual(Guid.Empty);
+    }
+}

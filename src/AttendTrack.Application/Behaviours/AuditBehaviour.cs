@@ -50,13 +50,13 @@ public sealed class AuditBehaviour<TRequest, TResponse>
             return await next(ct).ConfigureAwait(false);
 
         var requestName = typeof(TRequest).Name;
-        var oldValues   = JsonSerializer.Serialize<object>(request, _jsonOpts);
+        var oldValues   = SerializeRedacted(request);
 
         var response = await next(ct).ConfigureAwait(false);
 
         try
         {
-            var newValues = JsonSerializer.Serialize<object>(response!, _jsonOpts);
+            var newValues = SerializeRedacted(response);
             var auditLog  = AuditLog.Create(
                 action:    requestName,
                 actorId:   _currentUser.UserId,
@@ -75,6 +75,23 @@ public sealed class AuditBehaviour<TRequest, TResponse>
         }
 
         return response;
+    }
+
+    /// <summary>
+    /// JSON-serialises the request/response, then redacts sensitive fields
+    /// (PIN, Password, AdminPassword, Token, FacePhotoBytes binary blob).
+    /// Cheap regex pass — runs only on audited requests, never on hot paths.
+    /// </summary>
+    private static string SerializeRedacted(object? value)
+    {
+        if (value is null) return "null";
+        var json = JsonSerializer.Serialize<object>(value, _jsonOpts);
+        json = System.Text.RegularExpressions.Regex.Replace(
+            json,
+            "\"(Pin|Password|AdminPassword|Token|FacePhotoBytes)\"\\s*:\\s*(\"[^\"]*\"|\\[[^\\]]*\\]|null)",
+            "\"$1\":\"***\"",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return json;
     }
 }
 

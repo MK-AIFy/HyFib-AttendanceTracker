@@ -72,11 +72,34 @@ public sealed class CheckInHandler : IRequestHandler<CheckInCommand, Guid>
             verifyMode:   "pin");
 
         await _attRepo.AddAsync(record, ct).ConfigureAwait(false);
-        await _uow.SaveChangesAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _uow.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsUniqueViolation(ex))
+        {
+            // UNIQUE(employee_id, work_date) violation — a concurrent webhook + kiosk
+            // race condition. Surface as the domain exception the controller expects.
+            throw new AlreadyCheckedInException(employee.Id.Value);
+        }
 
         _logger.LogInformation("Kiosk CheckIn: {Code} at {Time} IST",
             cmd.EmployeeCode, IstClock.FormatIstTime(record.CheckInTime!.Value));
         return record.Id;
+    }
+
+    private static bool IsUniqueViolation(Exception ex)
+    {
+        var inner = ex.InnerException;
+        while (inner is not null)
+        {
+            if (inner.Message.Contains("23505", StringComparison.Ordinal)
+             || inner.Message.Contains("UNIQUE constraint", StringComparison.OrdinalIgnoreCase))
+                return true;
+            inner = inner.InnerException;
+        }
+        return ex.Message.Contains("23505", StringComparison.Ordinal)
+            || ex.Message.Contains("UNIQUE constraint", StringComparison.OrdinalIgnoreCase);
     }
 }
 

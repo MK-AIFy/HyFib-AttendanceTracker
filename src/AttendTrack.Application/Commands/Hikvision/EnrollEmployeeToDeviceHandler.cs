@@ -47,6 +47,7 @@ public sealed class EnrollEmployeeToDeviceHandler
         {
             await _isapiService.EnrollEmployeeAsync(device, employee, cmd.FacePhotoBytes, ct);
             employee.MarkBiometricEnrolled(employee.EmployeeCode);
+            device.IncrementEnrolledCount();
             await _uow.SaveChangesAsync(ct);
 
             _logger.LogInformation("Employee {Code} enrolled on device {Serial}",

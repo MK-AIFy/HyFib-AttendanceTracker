@@ -46,7 +46,8 @@ public sealed class UnitOfWork : IUnitOfWork
 
     public void Dispose()
     {
+        // DI owns the DbContext lifetime — never dispose it here, otherwise the
+        // next scoped consumer in the same request gets an ObjectDisposedException.
         _transaction?.Dispose();
-        _context.Dispose();
     }
 }

@@ -81,6 +81,21 @@ public sealed class DistributedCacheWrapper : IDistributedCacheWrapper
         _memoryCache.Remove(key);
     }
 
+    public async Task<bool> KeyExistsAsync(string key, CancellationToken ct = default)
+    {
+        try
+        {
+            var bytes = await _redis.GetAsync(key, ct).ConfigureAwait(false);
+            if (bytes is not null) return true;
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            _logger.LogWarning(ex, "Redis EXISTS failed for key '{Key}', falling back", key);
+        }
+
+        return _memoryCache.TryGetValue(key, out _);
+    }
+
     private static bool IsRedisFailure(Exception ex) =>
         ex is RedisConnectionException
             or RedisTimeoutException

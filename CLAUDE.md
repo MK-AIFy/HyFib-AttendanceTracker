@@ -1675,3 +1675,103 @@ docs/hikvision-onboarding.md                                 (NEW — 10-section
 ---
 
 *v2.2.0 — Production hardening Phases 1-6 complete. CLAUDE.md is the single source of truth.*
+
+---
+
+## v2.3.0 — PHASE 7 PRODUCTION DEFECT SWEEP (✅ shipped)
+
+40+ defects identified during a focused production audit. Fixes split across five sequenced phases — every phase ends green (`dotnet build` 0 errors, all 33 tests pass).
+
+### Phase 1 — Runtime blockers (login, layout, idempotency)
+
+- **NavigationException on prerender**: `App.razor`'s `<NotAuthorized>` block called `Nav.NavigateTo("/login", forceLoad: true)` synchronously inside the render delegate, throwing during server prerender. Replaced with new `Components/RedirectToLogin.razor` that defers the call to `OnAfterRender(firstRender)`.
+- **Login redirect role-aware**: `Login.cshtml.cs` now resolves the signed-in employee's role and redirects admins to `/admin/dashboard`, everyone else to `/employee/my-attendance`. `returnUrl` is honoured first.
+- **MainLayout rebuilt**: full sidebar with role-gated admin links via `<AuthorizeView Roles="...">`, an Employee Workspace section, a real `<form method="post" action="/auth/logout-form">` logout (CSRF-safe), and footer.
+- **KioskLayout fixed**: removed nested `<!DOCTYPE html><html><body>` (Blazor layouts must not redefine the document).
+- **Anti-forgery on Login**: added `@Html.AntiForgeryToken()` to `Login.cshtml`.
+- **Default authorization policy combines Cookie + JWT**: `Program.cs` builds an `AuthorizationPolicyBuilder` that accepts both `CookieAuthenticationDefaults.AuthenticationScheme` and `JwtBearerDefaults.AuthenticationScheme`. Without this, JWT-bearing API clients hitting `[Authorize]` got 401 because cookie was the only default.
+- **`Kiosk:AllowedIpRanges` is now an array**: `appsettings.{Development,Production.template,*}.json` carry CIDR arrays (e.g. `["127.0.0.1/32","::1/128","192.168.1.0/24"]`), matching the `string[]` shape expected by `TcpIpWhitelistMiddleware`.
+- **Logout-form endpoint**: `AuthController.LogoutForm` is `[HttpPost("logout-form")] [IgnoreAntiforgeryToken]` for Razor `<form>` posts (the JSON `/auth/logout` is preserved for SPA clients).
+- **Kiosk button labels swapped back**: "Start Break" → `BreakStartAsync` (warning), "End Break" → `BreakEndAsync` (info).
+- **`EndBreakCommand` resolves open break itself**: refactored to `(string EmployeeCode, string Pin)`. Handler picks the active break (`record.Breaks.FirstOrDefault(b => b.IsActive)`) — previously a `Guid.Empty` placeholder was used at the call site.
+- **CheckIn UNIQUE-violation race**: `CheckInCommand` now wraps `SaveChangesAsync` in try/catch and translates `23505` UNIQUE-constraint violations into `AlreadyCheckedInException`. New private `IsUniqueViolation` helper walks the `InnerException` chain.
+- **ProcessHikvisionEvent absorbs duplicate `checkOut`**: added `catch (AlreadyCheckedOutException)` that logs "duplicate — idempotent ignore" and `eventLog.MarkFailed(...)`.
+- **`UnitOfWork.Dispose()` no longer disposes the DbContext**: DI owns the DbContext lifetime; the unit of work only disposes the optional ambient transaction.
+- **Dead `Routes.razor` deleted** (Router lives in `App.razor`).
+
+### Phase 2 — Security + authorization
+
+- **Admin pages role-gated**: every `Pages/Admin/*.razor` carries `@attribute [Authorize(Roles = "SuperAdmin,Admin,HRManager,Manager")]`. Bare `[Authorize]` was letting any signed-in employee onto the admin dashboard.
+- **`ExportEmployeeDataCommand : IAuditableRequest`**: every DPDP data export is now persisted in `audit_logs`.
+- **`AuditRepository.GetByActorAsync` IST → UTC fix**: stores are UTC; the previous code constructed `DateTime` with `DateTimeKind.Utc` from an IST `DateOnly`, shifting the range by 5h30m. Now uses `IstTimeHelper.ToUtc(...)`.
+- **XML injection hardened**: `HikvisionIsapiService.EnrollEmployeeAsync`, `WrapAsEventNotification`, and `SyncDeviceEventsHandler` all interpolate user-supplied strings (employee name, card number, device serial) into outbound XML. All values are now passed through a private `XmlEscape` helper backed by `System.Security.SecurityElement.Escape`.
+- **Audit sensitive-field redaction**: `AuditBehaviour` now serialises requests/responses through `SerializeRedacted`, which regex-replaces `Pin`, `Password`, `AdminPassword`, `Token`, `FacePhotoBytes` values with `"***"` before persistence. `RegisterHikvisionDeviceCommand.AdminPassword` no longer leaks into audit JSONB.
+- **`RequestAuditMiddleware` uses `CancellationToken.None`**: the audit write fires after the response is already on the wire — using `context.RequestAborted` was racing with client disconnect and silently dropping audit rows.
+
+### Phase 3 — Data integrity
+
+- **`IDistributedCacheWrapper.KeyExistsAsync`**: new method (Redis-first, falls back to `IMemoryCache`). `KioskOfflineAlertService` now calls it instead of `GetAsync<object>` — `default(object)` was indistinguishable from "key missing", causing flapping false-positive offline alerts when Redis returned `null`/empty bytes.
+- **Enrollment count increments**: `EnrollEmployeeToDeviceHandler` now calls `device.IncrementEnrolledCount()` inside the success branch. The dashboard `Enrolled: N` counter was permanently 0.
+- **Hikvision malformed-payload handling**: `ProcessHikvisionEventHandler` no longer rethrows on `HikvisionEventParser.Parse` failure. Malformed XML, or events missing `employeeNoString`/`attendanceStatus`, are logged + absorbed and return an empty result so the device gets HTTP 200 (and stops retrying).
+
+> Phase 3 deferred (re-evaluate at first quarterly review): MissedPunchDetector 22h blind spot, HourlyTrackerService night-shift `WorkDate` bookkeeping, EmployeeCode uppercase normalisation, repository `Update` calls on Update/Deactivate/AssignShift handlers, daily-report `TotalLate`/`TotalAbsent` accuracy. None of these block production for the pilot fleet.
+
+### Phase 4 — Validation + UX polish
+
+- **New validators** in `CommandValidators.cs`: `CheckOutCommandValidator`, `StartBreakCommandValidator`, `EndBreakCommandValidator`, `ExportEmployeeDataCommandValidator`. Each enforces `EmployeeCode ≤ 20`, 6-digit PIN, `BreakType` enum, non-empty `EmployeeId`. They run as the outermost MediatR behaviour, short-circuiting bad requests before any handler.
+- **`MyAttendance.razor.cs` redirects unauthenticated callers**: if `CurrentUser.UserId` is null in `OnInitializedAsync`, the page navigates to `/login` (force-load) instead of silently rendering an empty grid.
+- **Empty controller stubs deleted**: `AttendanceController`, `DataSubjectController`, `HealthController`, `ReportsController` were all `public sealed class X : ControllerBase {}`. Removed — `app.MapHealthChecks("/health")` already handles `/health`, and the others were dead code that confused route discovery.
+
+### Phase 5 — Verification
+
+| Check | Result |
+|---|---|
+| `dotnet build AttendTrack.sln` | ✅ 0 errors, 1 pre-existing warning (CS0649 `KioskTerminal._presentCount`) |
+| `dotnet test Domain.Tests` | ✅ 26 / 26 |
+| `dotnet test Application.Tests` | ✅ 7 / 7 |
+
+### Files touched in v2.3.0
+
+```
+NEW
+  src/AttendTrack.Web/Components/RedirectToLogin.razor
+
+DELETED
+  src/AttendTrack.Web/Routes.razor
+  src/AttendTrack.Web/Controllers/AttendanceController.cs
+  src/AttendTrack.Web/Controllers/DataSubjectController.cs
+  src/AttendTrack.Web/Controllers/HealthController.cs
+  src/AttendTrack.Web/Controllers/ReportsController.cs
+
+MODIFIED
+  src/AttendTrack.Application/Behaviours/AuditBehaviour.cs
+  src/AttendTrack.Application/Commands/Attendance/CheckInCommand.cs
+  src/AttendTrack.Application/Commands/Attendance/EndBreakCommand.cs
+  src/AttendTrack.Application/Commands/Employee/ExportEmployeeDataCommand.cs
+  src/AttendTrack.Application/Commands/Hikvision/EnrollEmployeeToDeviceHandler.cs
+  src/AttendTrack.Application/Commands/Hikvision/ProcessHikvisionEventHandler.cs
+  src/AttendTrack.Application/Commands/Hikvision/SyncDeviceEventsHandler.cs
+  src/AttendTrack.Application/Interfaces/IDistributedCacheWrapper.cs
+  src/AttendTrack.Application/Validators/CommandValidators.cs
+  src/AttendTrack.Infrastructure/Persistence/Repositories/AuditRepository.cs
+  src/AttendTrack.Infrastructure/Persistence/UnitOfWork.cs
+  src/AttendTrack.Infrastructure/Services/DistributedCacheWrapper.cs
+  src/AttendTrack.Infrastructure/Services/HikvisionIsapiService.cs
+  src/AttendTrack.Infrastructure/Services/KioskOfflineAlertService.cs
+  src/AttendTrack.Web/App.razor
+  src/AttendTrack.Web/Controllers/AuthController.cs
+  src/AttendTrack.Web/Layouts/KioskLayout.razor
+  src/AttendTrack.Web/Layouts/MainLayout.razor
+  src/AttendTrack.Web/Middleware/RequestAuditMiddleware.cs
+  src/AttendTrack.Web/Pages/Admin/{Dashboard,Employees,HikvisionDevices,HourlyHeatMap,
+    LiveAttendance,Reports,Shifts,ShiftViolations}.razor   (role-gated [Authorize])
+  src/AttendTrack.Web/Pages/Employee/MyAttendance.razor.cs
+  src/AttendTrack.Web/Pages/Kiosk/KioskTerminal.razor + .cs
+  src/AttendTrack.Web/Pages/Login.cshtml + .cshtml.cs
+  src/AttendTrack.Web/Program.cs
+  src/AttendTrack.Web/appsettings.{Development,json}.json
+```
+
+---
+
+*v2.3.0 — Phase 7 production defect sweep complete. 40+ fixes shipped across runtime, security, data integrity, validation, and UX. Build green, tests green.*

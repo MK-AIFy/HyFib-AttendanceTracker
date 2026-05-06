@@ -1,5 +1,5 @@
 @page "/admin/dashboard"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "SuperAdmin,Admin,HRManager,Manager")]
 @layout AttendTrack.Web.Layouts.MainLayout
 
 <h4 class="mb-4"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h4>

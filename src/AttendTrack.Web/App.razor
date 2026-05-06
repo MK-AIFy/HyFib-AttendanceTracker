@@ -1,13 +1,11 @@
-@inject NavigationManager Nav
+@using AttendTrack.Web.Components
 
 <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layouts.MainLayout)">
                 <NotAuthorized>
-                    @{
-                        Nav.NavigateTo("/login", forceLoad: true);
-                    }
+                    <RedirectToLogin />
                 </NotAuthorized>
                 <Authorizing>
                     <p class="p-4 text-muted">Authorizing…</p>

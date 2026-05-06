@@ -55,8 +55,10 @@ public sealed class RequestAuditMiddleware
             var repo = context.RequestServices.GetRequiredService<IAuditRepository>();
             var uow  = context.RequestServices.GetRequiredService<IUnitOfWork>();
 
-            await repo.AddAsync(entry, context.RequestAborted);
-            await uow.SaveChangesAsync(context.RequestAborted);
+            // Use CancellationToken.None so the audit completes even if the
+            // client disconnected after the response was sent.
+            await repo.AddAsync(entry, CancellationToken.None);
+            await uow.SaveChangesAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {

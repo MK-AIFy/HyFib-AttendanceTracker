@@ -6,6 +6,7 @@ public sealed partial class MyAttendance : ComponentBase
 {
     [Inject] private ISender               Sender      { get; set; } = default!;
     [Inject] private ICurrentUserService   CurrentUser { get; set; } = default!;
+    [Inject] private NavigationManager     Nav         { get; set; } = default!;
 
     private IReadOnlyList<AttendanceDto> _records = [];
     private DateOnly _from = IstTimeHelper.TodayIst.AddDays(-30);
@@ -13,7 +14,14 @@ public sealed partial class MyAttendance : ComponentBase
     private bool _loading;
 
     protected override async Task OnInitializedAsync()
-        => await LoadDataAsync();
+    {
+        if (CurrentUser.UserId is null)
+        {
+            Nav.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+        await LoadDataAsync();
+    }
 
     private async Task LoadDataAsync()
     {

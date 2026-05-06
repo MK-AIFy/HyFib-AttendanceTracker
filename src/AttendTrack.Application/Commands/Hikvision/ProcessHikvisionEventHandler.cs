@@ -57,16 +57,31 @@ public sealed class ProcessHikvisionEventHandler
     public async Task<HikvisionProcessResult> Handle(
         ProcessHikvisionEventCommand cmd, CancellationToken ct)
     {
-        // ── Step 1: Parse XML (throws on malformed — caller returns 400) ─────────
-        HikvisionEventParsed? parsed;
+        // ── Step 1: Parse XML — malformed payload is logged and absorbed ─────────
+        HikvisionEventParsed parsed;
         try
         {
             parsed = HikvisionEventParser.Parse(cmd.RawXml);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to parse Hikvision XML payload");
-            throw;
+            _logger.LogError(ex, "Malformed Hikvision XML payload — discarded");
+            return new HikvisionProcessResult(
+                EmployeeCode: "", AttendanceStatus: "", VerifyMode: "", AttendanceRecordId: null);
+        }
+
+        // Reject events with no employee code or no attendance status — they can't be processed
+        if (string.IsNullOrWhiteSpace(parsed.EmployeeNoString)
+            || string.IsNullOrWhiteSpace(parsed.AttendanceStatus))
+        {
+            _logger.LogWarning(
+                "Hikvision event missing employeeNoString or attendanceStatus — discarded ({Serial})",
+                parsed.DeviceSerial);
+            return new HikvisionProcessResult(
+                EmployeeCode: parsed.EmployeeNoString ?? "",
+                AttendanceStatus: parsed.AttendanceStatus ?? "",
+                VerifyMode: parsed.CurrentVerifyMode ?? "",
+                AttendanceRecordId: null);
         }
 
         _logger.LogInformation(
@@ -155,6 +170,12 @@ public sealed class ProcessHikvisionEventHandler
             _logger.LogInformation(
                 "Duplicate check-in for {Code} — idempotent ignore", parsed.EmployeeNoString);
             eventLog.MarkFailed("Duplicate check-in — idempotent ignore");
+        }
+        catch (AlreadyCheckedOutException)
+        {
+            _logger.LogInformation(
+                "Duplicate check-out for {Code} — idempotent ignore", parsed.EmployeeNoString);
+            eventLog.MarkFailed("Duplicate check-out — idempotent ignore");
         }
         catch (Exception ex) when (IsUniqueViolation(ex))
         {

@@ -132,7 +132,17 @@ try
             };
         });
 
-    builder.Services.AddAuthorization();
+    builder.Services.AddAuthorization(opts =>
+    {
+        // Default policy honors EITHER auth scheme — cookie for Blazor UI,
+        // JWT bearer for /api/* clients. Without this [Authorize] only checks
+        // the cookie scheme and JWT-authenticated callers get 401.
+        opts.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                JwtBearerDefaults.AuthenticationScheme)
+            .RequireAuthenticatedUser()
+            .Build();
+    });
 
     // Application layer
     builder.Services.AddApplication();

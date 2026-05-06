@@ -45,15 +45,15 @@ public sealed class SyncDeviceEventsHandler
             var rawXml = $"""
                 <?xml version="1.0" encoding="UTF-8"?>
                 <EventNotificationAlert version="2.0">
-                  <macAddress>{ev.DeviceSerial}</macAddress>
+                  <macAddress>{XmlEscape(ev.DeviceSerial)}</macAddress>
                   <eventType>AccessControllerEvent</eventType>
                   <AccessControllerEvent>
                     <time>{epochSec}</time>
-                    <employeeNoString>{ev.EmployeeNoString}</employeeNoString>
-                    <name>{ev.EmployeeName}</name>
-                    <attendanceStatus>{ev.AttendanceStatus}</attendanceStatus>
-                    <currentVerifyMode>{ev.CurrentVerifyMode}</currentVerifyMode>
-                    <cardNo>{ev.CardNo ?? ""}</cardNo>
+                    <employeeNoString>{XmlEscape(ev.EmployeeNoString)}</employeeNoString>
+                    <name>{XmlEscape(ev.EmployeeName)}</name>
+                    <attendanceStatus>{XmlEscape(ev.AttendanceStatus)}</attendanceStatus>
+                    <currentVerifyMode>{XmlEscape(ev.CurrentVerifyMode)}</currentVerifyMode>
+                    <cardNo>{XmlEscape(ev.CardNo ?? "")}</cardNo>
                   </AccessControllerEvent>
                 </EventNotificationAlert>
                 """;
@@ -67,4 +67,9 @@ public sealed class SyncDeviceEventsHandler
 
         return new SyncDeviceEventsResult(cmd.DeviceId, processed, skipped);
     }
+
+    private static string XmlEscape(string? value)
+        => string.IsNullOrEmpty(value)
+            ? string.Empty
+            : System.Security.SecurityElement.Escape(value) ?? string.Empty;
 }

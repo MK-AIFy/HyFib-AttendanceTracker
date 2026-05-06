@@ -52,7 +52,7 @@ public sealed class LoginModel : PageModel
     public IActionResult OnGet()
     {
         if (User.Identity?.IsAuthenticated == true)
-            return RedirectToPage("/Admin/Dashboard");
+            return LocalRedirect("/admin/dashboard");
         return Page();
     }
 
@@ -111,7 +111,10 @@ public sealed class LoginModel : PageModel
         if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
             return LocalRedirect(returnUrl);
 
-        return RedirectToPage("/Admin/Dashboard");
+        // Role-aware default landing
+        var role = employee.Role.ToString();
+        var isAdminRole = role is "SuperAdmin" or "Admin" or "HRManager" or "Manager";
+        return LocalRedirect(isAdminRole ? "/admin/dashboard" : "/employee/my-attendance");
     }
 
     private async Task RecordFailureAsync(string employeeCode, CancellationToken ct)

@@ -1,5 +1,6 @@
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Interfaces.Repositories;
+using AttendTrack.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace AttendTrack.Infrastructure.Persistence.Repositories;
@@ -23,8 +24,10 @@ public sealed class AuditRepository : IAuditRepository
     public async Task<IReadOnlyList<AuditLog>> GetByActorAsync(
         Guid actorId, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        var fromUtc = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var toUtc   = to.ToDateTime(TimeOnly.MaxValue,   DateTimeKind.Utc);
+        // Caller passes IST work dates; OccurredAt is stored as UTC.
+        // Convert IST midnight → UTC so the range matches what's actually persisted.
+        var fromUtc = IstTimeHelper.ToUtc(from.ToDateTime(TimeOnly.MinValue));
+        var toUtc   = IstTimeHelper.ToUtc(to.ToDateTime(TimeOnly.MaxValue));
 
         return await _db.AuditLogs
             .Where(a => a.ActorId      == actorId

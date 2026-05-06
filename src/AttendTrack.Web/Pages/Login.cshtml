@@ -1,5 +1,6 @@
 @page "/login"
 @model AttendTrack.Web.Pages.LoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 @{ Layout = null; }
 <!DOCTYPE html>
 <html lang="en">
@@ -23,6 +24,7 @@
                 </div>
 
                 <form method="post">
+                    @Html.AntiForgeryToken()
                     <div asp-validation-summary="All" class="alert alert-danger small py-2"
                          style="@(ViewData.ModelState.IsValid ? "display:none" : "")"></div>
 

@@ -1,5 +1,5 @@
 @page "/admin/violations"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "SuperAdmin,Admin,HRManager,Manager")]
 @layout AttendTrack.Web.Layouts.MainLayout
 
 <h4 class="mb-4"><i class="bi bi-exclamation-triangle me-2"></i>Shift Violations</h4>

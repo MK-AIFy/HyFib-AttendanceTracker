@@ -1,4 +1,5 @@
 using System.Text;
+using AttendTrack.Application.Common;
 using AttendTrack.Domain.Exceptions;
 using AttendTrack.Domain.Interfaces.Repositories;
 using AttendTrack.Domain.Interfaces.Services;
@@ -11,9 +12,10 @@ namespace AttendTrack.Application.Commands.Employee;
 /// <summary>
 /// DPDP Act 2023 Gap 6 — exports all personal data for a data subject.
 /// Returns UTF-8 JSON bytes for download by the employee.
+/// Marked auditable: every export is recorded for compliance.
 /// </summary>
 public sealed record ExportEmployeeDataCommand(
-    Guid EmployeeId) : IRequest<byte[]>;
+    Guid EmployeeId) : IRequest<byte[]>, IAuditableRequest;
 
 public sealed class ExportEmployeeDataHandler : IRequestHandler<ExportEmployeeDataCommand, byte[]>
 {
