@@ -2,22 +2,40 @@ using Microsoft.AspNetCore.Components;
 
 namespace AttendTrack.Web.Pages.Admin;
 
-public sealed partial class HourlyHeatMap : ComponentBase
+public sealed partial class HourlyHeatMap : ComponentBase, IAsyncDisposable
 {
     [Inject] private ISender Sender { get; set; } = default!;
+    [Inject] private AttendanceNotifier Notifier { get; set; } = default!;
 
     private IReadOnlyList<HourlyBreakdownDto> _breakdowns = [];
     private DateOnly _selectedDate = IstTimeHelper.TodayIst;
     private bool _loading;
 
     protected override async Task OnInitializedAsync()
-        => await LoadDataAsync();
+    {
+        Notifier.OnAttendanceChanged += OnAttendanceChangedHandler;
+        await LoadDataAsync();
+    }
 
     private async Task LoadDataAsync()
     {
         _loading = true;
         _breakdowns = await Sender.Send(new GetHourlyBreakdownQuery(_selectedDate));
         _loading = false;
+    }
+
+    private void OnAttendanceChangedHandler()
+    {
+        // Only auto-refresh when the heat map is showing today's data —
+        // historical date views should stay static.
+        if (_selectedDate != IstTimeHelper.TodayIst) return;
+        InvokeAsync(async () => { await LoadDataAsync(); StateHasChanged(); });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Notifier.OnAttendanceChanged -= OnAttendanceChangedHandler;
+        await Task.CompletedTask;
     }
 
     private static string HeatColor(HourlySlotDto? slot)

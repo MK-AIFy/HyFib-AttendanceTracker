@@ -12,8 +12,8 @@ namespace AttendTrack.Infrastructure.Services;
 
 /// <summary>
 /// [Gap 4] Runs every 60 seconds. For each open attendance record today it computes
-/// minutes worked per IST hour slot (0–23) and upserts HourlySlot rows.
-/// Produces the data required by the HourlyHeatMap admin page.
+/// minutes worked per IST hour slot (0–23), subtracting any break overlap, and upserts
+/// HourlySlot rows. Produces the data required by the HourlyHeatMap admin page.
 /// Uses IServiceScopeFactory for all scoped DB access.
 /// </summary>
 public sealed class HourlyTrackerService : BackgroundService
@@ -59,8 +59,9 @@ public sealed class HourlyTrackerService : BackgroundService
         var todayIst = IstTimeHelper.TodayIst;
         var nowUtc   = DateTime.UtcNow;
 
-        // Find all attendance records for today that have checked in but not yet checked out
+        // Eager-load breaks so ComputeHourlySlots can subtract their overlap per hour.
         var openRecords = await db.AttendanceRecords
+            .Include(r => r.Breaks)
             .Where(r => r.WorkDate     == todayIst
                      && r.CheckInTime  != null
                      && r.CheckOutTime == null)
@@ -69,7 +70,18 @@ public sealed class HourlyTrackerService : BackgroundService
 
         foreach (var record in openRecords)
         {
-            var slots = ComputeHourlySlots(record, nowUtc);
+            var breaks = record.Breaks
+                .Select(b => (b.StartTime, b.EndTime))
+                .ToList();
+
+            var slots = ComputeHourlySlots(
+                attendanceRecordId: record.Id,
+                employeeId:         record.EmployeeId.Value,
+                checkInUtc:         record.CheckInTime!.Value,
+                checkOutUtc:        record.CheckOutTime,
+                breaks:             breaks,
+                nowUtc:             nowUtc);
+
             foreach (var slot in slots)
                 await hourlySlotRepository.UpsertAsync(slot, ct).ConfigureAwait(false);
         }
@@ -83,18 +95,30 @@ public sealed class HourlyTrackerService : BackgroundService
     }
 
     /// <summary>
-    /// Calculates how many minutes the employee worked within each IST hour slot
-    /// between check-in and now (or checkout if available).
+    /// Pure function: given an attendance window and zero-or-more break windows (both in UTC),
+    /// produces one <see cref="HourlySlot"/> per IST hour the employee was on the clock.
+    /// Per-hour break overlap is subtracted from <c>MinutesWorked</c>; <c>IsBreak</c> is set
+    /// when breaks consumed at least half of the hour's window.
     /// </summary>
-    private static List<HourlySlot> ComputeHourlySlots(
-        AttendanceRecord record, DateTime nowUtc)
+    /// <param name="checkOutUtc">Null when the employee is still on the clock — falls back to <paramref name="nowUtc"/>.</param>
+    internal static List<HourlySlot> ComputeHourlySlots(
+        Guid attendanceRecordId,
+        Guid employeeId,
+        DateTime checkInUtc,
+        DateTime? checkOutUtc,
+        IReadOnlyList<(DateTime StartUtc, DateTime? EndUtc)> breaks,
+        DateTime nowUtc)
     {
-        var checkInUtc  = record.CheckInTime!.Value;
-        var checkOutUtc = record.CheckOutTime ?? nowUtc;
-
-        // Convert to IST for hour-boundary calculations
         var checkInIst  = IstTimeHelper.ToIstDateTime(checkInUtc);
-        var checkOutIst = IstTimeHelper.ToIstDateTime(checkOutUtc);
+        var checkOutIst = IstTimeHelper.ToIstDateTime(checkOutUtc ?? nowUtc);
+
+        // Convert breaks to IST once. Open breaks are clamped to nowUtc.
+        var breakIstWindows = breaks
+            .Select(b => (
+                Start: IstTimeHelper.ToIstDateTime(b.StartUtc),
+                End:   IstTimeHelper.ToIstDateTime(b.EndUtc ?? nowUtc)))
+            .Where(b => b.End > b.Start)
+            .ToList();
 
         var slots = new List<HourlySlot>();
         var current = new DateTime(
@@ -107,16 +131,20 @@ public sealed class HourlyTrackerService : BackgroundService
             var start   = current < checkInIst  ? checkInIst  : current;
             var end     = slotEnd > checkOutIst ? checkOutIst : slotEnd;
 
-            var minutes = (int)(end - start).TotalMinutes;
-            if (minutes > 0)
+            var rawMinutes = (int)(end - start).TotalMinutes;
+            if (rawMinutes > 0)
             {
-                var workDate = DateOnly.FromDateTime(current);
+                var breakMinutes = breakIstWindows.Sum(b => OverlapMinutes(start, end, b.Start, b.End));
+                var workedMinutes = Math.Max(0, rawMinutes - breakMinutes);
+                var isBreak       = breakMinutes > 0 && breakMinutes * 2 >= rawMinutes;
+
                 slots.Add(HourlySlot.Create(
-                    attendanceRecordId: record.Id,
-                    employeeId:         record.EmployeeId.Value,
-                    workDate:           workDate,
+                    attendanceRecordId: attendanceRecordId,
+                    employeeId:         employeeId,
+                    workDate:           DateOnly.FromDateTime(current),
                     hourSlot:           current.Hour,
-                    minutesWorked:      minutes));
+                    minutesWorked:      workedMinutes,
+                    isBreak:            isBreak));
             }
 
             current = slotEnd;
@@ -124,5 +152,12 @@ public sealed class HourlyTrackerService : BackgroundService
 
         return slots;
     }
-}
 
+    private static int OverlapMinutes(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd)
+    {
+        var start = aStart > bStart ? aStart : bStart;
+        var end   = aEnd   < bEnd   ? aEnd   : bEnd;
+        var minutes = (int)(end - start).TotalMinutes;
+        return minutes > 0 ? minutes : 0;
+    }
+}

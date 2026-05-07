@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AttendTrack.Application\AttendTrack.Application.csproj" />
     <ProjectReference Include="..\..\src\AttendTrack.Domain\AttendTrack.Domain.csproj" />
+    <ProjectReference Include="..\..\src\AttendTrack.Infrastructure\AttendTrack.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

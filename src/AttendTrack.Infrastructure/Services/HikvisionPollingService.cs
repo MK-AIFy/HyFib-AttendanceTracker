@@ -11,9 +11,14 @@ using Microsoft.Extensions.Options;
 namespace AttendTrack.Infrastructure.Services;
 
 /// <summary>
-/// LAYER 2 fallback: polls Hikvision devices every 2 minutes if webhook gap detected.
-/// If LastEventReceivedAt > WebhookGapMinutes ago, fetches events via ISAPI.
-/// Deduplication via EventLogExistsAsync ensures no duplicate attendance records.
+/// Polls Hikvision devices via ISAPI on a fixed interval.
+/// Two modes (configured via <c>Hikvision:PollingMode</c>):
+///   • <c>Fallback</c> (default) — only polls when the webhook has been silent for
+///     <c>WebhookGapMinutes</c>; preserves the original LAYER 2 fallback behaviour.
+///   • <c>Primary</c> — polling is unconditional. Use when the device's HTTP Listener
+///     is not configured to push events; the ISAPI URL becomes the only ingestion path.
+/// Deduplication via <c>EventLogExistsAsync</c> + the UNIQUE constraint on
+/// <c>hikvision_event_logs(serial, time, code)</c> guarantees no duplicate records.
 /// </summary>
 public sealed class HikvisionPollingService : BackgroundService
 {
@@ -33,8 +38,9 @@ public sealed class HikvisionPollingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("HikvisionPollingService started (interval: {Sec}s)",
-            _options.PollingIntervalSeconds);
+        _logger.LogInformation(
+            "HikvisionPollingService started (mode: {Mode}, interval: {Sec}s)",
+            _options.PollingMode, _options.PollingIntervalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -66,9 +72,12 @@ public sealed class HikvisionPollingService : BackgroundService
 
         foreach (var device in devices)
         {
-            // Only poll when webhook events have been silent longer than the gap threshold
             var lastEvent = device.LastEventReceivedAt ?? DateTime.MinValue;
-            if (DateTime.UtcNow - lastEvent < gapThreshold) continue;
+
+            // In Fallback mode, suppress polling while the webhook is fresh.
+            // In Primary mode, polling is unconditional.
+            if (_options.PollingMode == HikvisionPollingMode.Fallback
+                && DateTime.UtcNow - lastEvent < gapThreshold) continue;
 
             var since = lastEvent == DateTime.MinValue
                 ? DateTime.UtcNow.AddMinutes(-_options.WebhookGapMinutes)

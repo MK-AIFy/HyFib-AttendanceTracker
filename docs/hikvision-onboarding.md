@@ -76,8 +76,17 @@ AttendTrack Enterprise. Allow ~45 minutes per device for the first one,
 
 ## 4. Configure event push (webhook → AttendTrack)
 
-This is the **primary** integration path. Without it, attendance only
-arrives via the 2-minute polling fallback.
+This is one of two ingestion paths. Pick **one**:
+
+- **Webhook (default)** — device pushes to AttendTrack, latency < 500 ms.
+  Requires HTTP Listener config below + a network route from device → server.
+- **Polling-primary** — AttendTrack pulls from the device's ISAPI URL on
+  a fixed interval (default 60 s in dev, 120 s in prod). No HTTP Listener
+  config required on the device. Best when the device cannot reach the
+  AttendTrack server (one-way NAT, firewall) or when you want a single
+  audited source of truth. **Skip this section** and configure
+  `Hikvision:PollingMode = "Primary"` in `appsettings.{Env}.json`
+  (see §4.1 below).
 
 **Configuration → Network → Advanced Settings → HTTP Listening**
 
@@ -102,6 +111,47 @@ Click **Save** and wait 10 s for the device to reload its push config.
 > If your AttendTrack TLS cert is self-signed, you may need to drop the
 > webhook to HTTP/80 inside the LAN. The device firmware does not let you
 > import a custom CA bundle.
+
+---
+
+## 4.1. Alternative: polling-primary mode
+
+If you skipped §4 (or the device cannot reach the server), set the
+following in `appsettings.{Environment}.json` and restart the app:
+
+```jsonc
+"Hikvision": {
+  "PollingMode": "Primary",
+  "PollingIntervalSeconds": 60   // dev pilot; raise to 120 in production
+}
+```
+
+In this mode `HikvisionPollingService` calls
+`POST /ISAPI/AccessControl/AcsEvent` on every interval, regardless of
+whether webhook events have arrived. The device's HTTP Listener can stay
+disabled. Same dedup applies — events are archived to
+`hikvision_event_logs` with `UNIQUE(serial, time, employee_code)`, so
+even an accidental webhook delivery cannot create a duplicate
+`attendance_records` row.
+
+Trade-offs vs the webhook path:
+
+| | Webhook (Fallback default) | Polling-primary |
+|---|---|---|
+| Latency | < 500 ms | up to `PollingIntervalSeconds` |
+| Network direction | device → server | server → device |
+| Device config | HTTP Listener required | none |
+| Resilience to network blips | server-side fallback poll covers gaps | no separate fallback — interval already polls |
+| Pilot fit | best for production | best for single-device pilot or one-way NAT |
+
+Verify it's working by tailing the application log — within one
+interval you should see:
+
+```
+info: HikvisionPollingService started (mode: Primary, interval: 60s)
+info: Polling device DS-K1T320MFWX...
+info: Poll complete for ...: N processed, M skipped
+```
 
 ---
 

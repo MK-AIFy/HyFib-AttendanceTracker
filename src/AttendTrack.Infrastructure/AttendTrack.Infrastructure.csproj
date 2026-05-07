@@ -14,6 +14,11 @@
     <ProjectReference Include="..\AttendTrack.Domain\AttendTrack.Domain.csproj" />
   </ItemGroup>
 
+  <!-- Expose internal helpers (e.g. HourlyTrackerService.ComputeHourlySlots) for unit testing. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="AttendTrack.Application.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
