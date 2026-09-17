@@ -41,6 +41,18 @@ public sealed class EmployeeTests
         employee.Role.Should().Be(UserRole.Employee);
     }
 
+    // ── Test 1b: EmployeeCode is normalized to uppercase ──────────────────────
+
+    [Fact]
+    public void Create_LowercaseEmployeeCode_IsStoredUppercase()
+    {
+        var employee = MakeEmployee("emp-lower");
+
+        employee.EmployeeCode.Should().Be("EMP-LOWER",
+            "storage must be case-normalized so the unique index actually enforces " +
+            "case-insensitive uniqueness and lookups match regardless of input casing");
+    }
+
     // ── Test 2: SoftDelete sets DeletedAt and deactivates ─────────────────────
 
     [Fact]
