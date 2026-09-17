@@ -51,6 +51,19 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 
         b.HasIndex(e => e.EmployeeCode).IsUnique();
         b.HasIndex(e => e.Email)       .IsUnique();
+
+        // Restrict, not Cascade: deleting a Department/Shift that employees still
+        // reference should fail loudly rather than silently orphan attendance history.
+        // There is currently no delete flow for either, so this cannot break one.
+        b.HasOne<Department>()
+            .WithMany()
+            .HasForeignKey(e => e.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.HasOne<Shift>()
+            .WithMany()
+            .HasForeignKey(e => e.DefaultShiftId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
