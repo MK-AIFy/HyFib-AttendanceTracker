@@ -101,7 +101,7 @@ else
                             @foreach (var log in logs)
                             {
                                 <tr>
-                                    <td class="small">@IstTimeHelper.ToIst(log.DeviceLocalTime)</td>
+                                    <td class="small">@IstTimeHelper.FormatAlreadyIst(log.DeviceLocalTime)</td>
                                     <td>@log.EmployeeName <span class="text-muted small">(@log.EmployeeCode)</span></td>
                                     <td>
                                         <span class="badge @AttendanceStatusBadge(log.AttendanceStatus)">

@@ -26,6 +26,14 @@ internal static class IstClock
     public static string FormatIstDate(DateTime utc)
         => ToIst(utc).ToString("dd MMM yyyy");
 
+    /// <summary>
+    /// Formats a value that is already an IST wall-clock reading (e.g. Hikvision's
+    /// DeviceLocalTime) as "15 Jan 2025 09:03 AM". Unlike FormatIst, this does NOT
+    /// convert from UTC first — doing so would double-shift an already-IST value.
+    /// </summary>
+    public static string FormatAlreadyIst(DateTime ist)
+        => ist.ToString("dd MMM yyyy hh:mm tt");
+
     private static TimeZoneInfo GetIstZone()
     {
         // IANA on macOS/Linux; Windows fallback

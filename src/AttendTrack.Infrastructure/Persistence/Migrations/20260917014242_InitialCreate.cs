@@ -252,6 +252,16 @@ namespace AttendTrack.Infrastructure.Persistence.Migrations
                 column: "AttendanceRecordId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_BreakRecords_EmployeeId",
+                table: "BreakRecords",
+                column: "EmployeeId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_BreakRecords_EmployeeId_StartTime",
+                table: "BreakRecords",
+                columns: new[] { "EmployeeId", "StartTime" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_employees_Email",
                 table: "employees",
                 column: "Email",

@@ -62,16 +62,38 @@ public sealed class AttendTrackDbContext : DbContext
 
         var result = await base.SaveChangesAsync(cancellationToken);
 
-        // Dispatch after successful save — events may trigger further DB writes
+        // Dispatch after successful save — events may trigger further DB writes.
+        // IDomainEvent is a plain marker interface (Domain has zero dependencies, so it
+        // can't implement MediatR's INotification directly) — wrap each event so
+        // IPublisher.Publish recognizes it, instead of passing the raw IDomainEvent
+        // object, which MediatR rejects with "notification does not implement INotification".
         foreach (var aggregate in aggregatesWithEvents)
         {
             foreach (var domainEvent in aggregate.DomainEvents)
-                await _publisher.Publish(domainEvent, cancellationToken).ConfigureAwait(false);
+                await _publisher.Publish(WrapAsNotification(domainEvent), cancellationToken)
+                    .ConfigureAwait(false);
 
             aggregate.ClearDomainEvents();
         }
 
         return result;
     }
+
+    private static INotification WrapAsNotification(IDomainEvent domainEvent)
+    {
+        var wrapperType = typeof(DomainEventNotification<>).MakeGenericType(domainEvent.GetType());
+        return (INotification)Activator.CreateInstance(wrapperType, domainEvent)!;
+    }
+}
+
+/// <summary>
+/// Adapts a Domain-layer <see cref="IDomainEvent"/> (a dependency-free marker interface) into
+/// a MediatR <see cref="INotification"/> so it can be dispatched via IPublisher.
+/// Future handlers subscribe as INotificationHandler&lt;DomainEventNotification&lt;TEvent&gt;&gt;.
+/// </summary>
+public sealed class DomainEventNotification<TDomainEvent>(TDomainEvent domainEvent) : INotification
+    where TDomainEvent : IDomainEvent
+{
+    public TDomainEvent DomainEvent { get; } = domainEvent;
 }
 

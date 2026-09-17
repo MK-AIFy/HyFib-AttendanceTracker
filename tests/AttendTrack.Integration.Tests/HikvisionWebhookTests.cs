@@ -147,10 +147,10 @@ public sealed class HikvisionWebhookTests : IClassFixture<AttendTrackWebApplicat
         count.Should().Be(1, "duplicate event must NOT create a second event log entry");
     }
 
-    // ── Test 5: Invalid XML → 400 ─────────────────────────────────────────────
+    // ── Test 5: Invalid XML → 200, absorbed ────────────────────────────────────
 
     [Fact]
-    public async Task Post_InvalidXml_Returns400()
+    public async Task Post_InvalidXml_Returns200Absorbed()
     {
         using var client = _factory.CreateDeviceClient();
 
@@ -159,8 +159,12 @@ public sealed class HikvisionWebhookTests : IClassFixture<AttendTrackWebApplicat
 
         var response = await client.PostAsync(WebhookPath, malformed);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "malformed XML must return 400 so the client knows to fix its payload");
+        // By design (ProcessHikvisionEventHandler.Handle, catch around
+        // HikvisionEventParser.Parse), malformed payloads are logged and absorbed
+        // rather than rejected — the device retries on any non-200, so a genuinely
+        // malformed payload must still get 200 or the device would retry forever.
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "malformed XML is absorbed, not rejected, so the device doesn't retry forever");
     }
 }
 

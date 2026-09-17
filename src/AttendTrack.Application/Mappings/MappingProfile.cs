@@ -18,7 +18,7 @@ public sealed class MappingProfile : Profile
         // HikvisionEventLog → HikvisionEventDto (IST formatted times)
         CreateMap<HikvisionEventLog, HikvisionEventDto>()
             .ForCtorParam("deviceLocalTime",
-                opt => opt.MapFrom(s => IstClock.FormatIst(s.DeviceLocalTime)));
+                opt => opt.MapFrom(s => IstClock.FormatAlreadyIst(s.DeviceLocalTime)));
     }
 }
 

@@ -3,6 +3,7 @@ using System;
 using AttendTrack.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AttendTrack.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AttendTrackDbContext))]
-    partial class AttendTrackDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917014242_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -396,7 +399,7 @@ namespace AttendTrack.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("DeviceLocalTime")
-                        .HasColumnType("timestamp without time zone");
+                        .HasColumnType("timestamptz");
 
                     b.Property<string>("DeviceSerialNumber")
                         .IsRequired()
