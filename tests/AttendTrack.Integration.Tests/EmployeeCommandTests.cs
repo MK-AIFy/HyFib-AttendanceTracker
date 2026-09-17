@@ -78,6 +78,30 @@ public sealed class EmployeeCommandTests : IClassFixture<AttendTrackWebApplicati
         employee.DefaultShiftId.Should().Be(AttendTrackWebApplicationFactory.TestSecondShiftId);
     }
 
+    [Fact]
+    public async Task CreateEmployeeCommand_WithNonExistentDepartment_FailsOnSave()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+
+        // A syntactically valid GUID that doesn't correspond to any seeded Department.
+        // CreateEmployeeCommandValidator only checks DepartmentId != Guid.Empty, not that
+        // it actually exists — the FK constraint on employees.DepartmentId is what's
+        // supposed to catch this.
+        var act = () => sender.Send(new CreateEmployeeCommand(
+            EmployeeCode:   "EMP-ORPHAN",
+            FullName:       "Ghost Employee",
+            Email:          "ghost@test.com",
+            Phone:          "1234567890",
+            Pin:            "123456",
+            DepartmentId:   Guid.NewGuid(),
+            DefaultShiftId: AttendTrackWebApplicationFactory.TestShiftId,
+            Role:           AttendTrack.Domain.Enums.UserRole.Employee,
+            JoinedAt:       DateOnly.FromDateTime(DateTime.UtcNow)));
+
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
     /// <summary>Reads the seeded test employee through a brand-new scope/DbContext,
     /// bypassing any change-tracker cache from the scope that issued the command.
     /// Filters by EmployeeCode (a plain string column) rather than Id.Value — EF cannot
