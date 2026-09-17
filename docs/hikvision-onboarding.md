@@ -242,7 +242,8 @@ sub-check (provided by `HikvisionDeviceHealthCheck`). If it shows
       the kiosk subnet (Blazor PIN fallback only).
 - [ ] Outbound internet blocked on the device — it doesn't need it.
 - [ ] Backups verified by a quarterly test restore (see
-      `scripts/restore.sh` / `scripts/backup.ps1`).
+      `scripts/restore.ps1` / `scripts/backup.ps1` on Windows,
+      `scripts/restore.sh` / `scripts/backup.sh` on Linux).
 - [ ] Quarterly review of `hikvision_event_logs WHERE is_processed=false`
       for anomalies.
 

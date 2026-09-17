@@ -216,7 +216,31 @@ Get-Content C:\AttendTrack\logs\attendtrack-*.log -Tail 50 -Wait
 
 ---
 
-## 10. Common issues
+## 10. Disaster recovery / restore
+
+`scripts/restore.ps1` restores a `.sql.gz` produced by `backup.ps1` (or
+`backup.sh`, same format). It **drops and recreates** the database, so it
+prompts for a typed `YES` confirmation before touching anything:
+
+```powershell
+# On the server (as Administrator):
+Import-Module WebAdministration
+Stop-WebAppPool -Name AttendTrack
+
+& C:\AttendTrack\scripts\restore.ps1 `
+    -BackupFile 'C:\AttendTrack\backups\daily\attendtrack_20260101_020000.sql.gz' `
+    -PgPassword attendtrack_db_pwd
+
+Start-WebAppPool -Name AttendTrack
+```
+
+Run this against a **quarterly test restore** target, not production, to
+verify backups are actually usable — a backup nobody has ever restored from
+is not a backup.
+
+---
+
+## 11. Common issues
 
 | Symptom | Fix |
 |---|---|

@@ -31,8 +31,11 @@ packages/
 nuget.config.user
 
 # ASP.NET
+# Real per-environment secrets are excluded; the checked-in Production
+# *template* (marker tokens only, no real secrets) must stay tracked.
 appsettings.*.json
 !appsettings.Development.json
+!appsettings.Production.template.json
 
 # Environment secrets
 .env
