@@ -16,9 +16,16 @@ public sealed class EmployeeRepository : IEmployeeRepository
             .ConfigureAwait(false);
 
     public async Task<Employee?> GetByCodeAsync(string employeeCode, CancellationToken ct = default)
-        => await _db.Employees
-            .FirstOrDefaultAsync(e => e.EmployeeCode == employeeCode, ct)
+    {
+        // EmployeeCode is stored uppercase (see Employee.Create), but callers — kiosk
+        // login, the Hikvision webhook — pass whatever case they received. Normalize
+        // here so lookups match regardless of caller, rather than trusting every call
+        // site to remember to uppercase first.
+        var normalized = employeeCode.ToUpperInvariant();
+        return await _db.Employees
+            .FirstOrDefaultAsync(e => e.EmployeeCode == normalized, ct)
             .ConfigureAwait(false);
+    }
 
     public async Task<Employee?> GetByEmailAsync(string email, CancellationToken ct = default)
         => await _db.Employees

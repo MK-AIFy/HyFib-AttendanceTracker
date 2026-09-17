@@ -55,10 +55,14 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         ArgumentException.ThrowIfNullOrWhiteSpace(fullName);
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
 
+        // Normalize once, at the single choke point every employee is created
+        // through, so EmployeeCode is always uppercase in storage — matching
+        // Hikvision's own convention (employeeNoString) and making the unique
+        // index on this column actually enforce case-insensitive uniqueness.
         return new Employee
         {
             Id                  = id,
-            EmployeeCode        = employeeCode,
+            EmployeeCode        = employeeCode.ToUpperInvariant(),
             FullName            = fullName,
             Email               = email,
             Phone               = phone,

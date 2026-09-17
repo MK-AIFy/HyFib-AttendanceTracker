@@ -102,6 +102,26 @@ public sealed class EmployeeCommandTests : IClassFixture<AttendTrackWebApplicati
         await act.Should().ThrowAsync<DbUpdateException>();
     }
 
+    [Fact]
+    public async Task GetByCodeAsync_MatchesRegardlessOfInputCase()
+    {
+        // TestEmployeeCode ("EMP-001") is seeded as-is (already uppercase). Employee
+        // codes are normalized to uppercase in storage (Employee.Create), but a caller
+        // — kiosk login, the Hikvision webhook — may pass any case. GetByCodeAsync must
+        // still find the row.
+        using var scope = _factory.Services.CreateScope();
+        var empRepo = scope.ServiceProvider
+            .GetRequiredService<AttendTrack.Domain.Interfaces.Repositories.IEmployeeRepository>();
+
+        var lowercase = await empRepo.GetByCodeAsync(
+            AttendTrackWebApplicationFactory.TestEmployeeCode.ToLowerInvariant());
+        var mixedCase = await empRepo.GetByCodeAsync("Emp-001");
+
+        lowercase.Should().NotBeNull();
+        lowercase!.EmployeeCode.Should().Be(AttendTrackWebApplicationFactory.TestEmployeeCode);
+        mixedCase.Should().NotBeNull();
+    }
+
     /// <summary>Reads the seeded test employee through a brand-new scope/DbContext,
     /// bypassing any change-tracker cache from the scope that issued the command.
     /// Filters by EmployeeCode (a plain string column) rather than Id.Value — EF cannot
