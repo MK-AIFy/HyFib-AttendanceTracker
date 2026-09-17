@@ -56,13 +56,16 @@ public sealed class HourlyTrackerService : BackgroundService
         var hourlySlotRepository = scope.ServiceProvider.GetRequiredService<IHourlySlotRepository>();
         var uow                  = scope.ServiceProvider.GetRequiredService<Domain.Interfaces.IUnitOfWork>();
 
-        var todayIst = IstTimeHelper.TodayIst;
-        var nowUtc   = DateTime.UtcNow;
+        var nowUtc = DateTime.UtcNow;
 
-        // Find all attendance records for today that have checked in but not yet checked out
+        // Any still-open record needs its hourly slots kept up to date, regardless of
+        // which calendar day it started on. Filtering by `WorkDate == today` would drop
+        // an open night shift the moment midnight IST passes — its WorkDate stays fixed
+        // at check-in time (yesterday), so the record would silently stop getting
+        // HourlySlot rows for the rest of the shift. MissedPunchDetectorService bounds
+        // how long a record can stay open, so this can't accumulate unboundedly.
         var openRecords = await db.AttendanceRecords
-            .Where(r => r.WorkDate     == todayIst
-                     && r.CheckInTime  != null
+            .Where(r => r.CheckInTime  != null
                      && r.CheckOutTime == null)
             .ToListAsync(ct)
             .ConfigureAwait(false);
