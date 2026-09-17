@@ -39,6 +39,10 @@ public sealed class AttendTrackWebApplicationFactory
     public const string TestDevicePassword = "hiktest123";
     public const string TestEmployeeCode   = "EMP-001";
 
+    public static readonly Guid TestEmployeeId  = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    public static readonly Guid TestShiftId     = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    public static readonly Guid TestSecondShiftId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
     // ── TestContainers ────────────────────────────────────────────────────────
 
 #pragma warning disable CS0618   // PostgreSqlBuilder() parameterless constructor — image default is fine for tests
@@ -152,12 +156,14 @@ public sealed class AttendTrackWebApplicationFactory
     private static async Task SeedAsync(AttendTrackDbContext db)
     {
         var deptId  = Guid.NewGuid();
-        var shiftId = Guid.NewGuid();
-        var empId   = EmployeeId.New();
+        var shiftId = TestShiftId;
+        var empId   = EmployeeId.From(TestEmployeeId);
 
         var dept = Department.Create(deptId, "Engineering");
         var shift = Shift.Create(shiftId, "Morning",
             new TimeOnly(9, 0), new TimeOnly(18, 0), gracePeriodMinutes: 15);
+        var secondShift = Shift.Create(TestSecondShiftId, "Evening",
+            new TimeOnly(14, 0), new TimeOnly(23, 0), gracePeriodMinutes: 15);
 
         // Use a cheap BCrypt work factor so test startup is fast
         var pinHash = BCrypt.Net.BCrypt.HashPassword("123456", workFactor: 4);
@@ -191,6 +197,7 @@ public sealed class AttendTrackWebApplicationFactory
 
         db.Departments.Add(dept);
         db.Shifts.Add(shift);
+        db.Shifts.Add(secondShift);
         db.Employees.Add(employee);
         db.HikvisionDevices.Add(device);
         await db.SaveChangesAsync();
