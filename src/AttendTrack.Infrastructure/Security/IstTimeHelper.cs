@@ -12,6 +12,14 @@ public static class IstTimeHelper
     public static string ToIst(DateTime utc)
         => TimeZoneInfo.ConvertTimeFromUtc(utc, Ist).ToString("dd MMM yyyy hh:mm tt");
 
+    /// <summary>
+    /// Formats a value that is already an IST wall-clock reading (e.g. Hikvision's
+    /// DeviceLocalTime) without converting it again — ToIst assumes a UTC input, so
+    /// passing an already-IST value to it would double-shift the displayed time.
+    /// </summary>
+    public static string FormatAlreadyIst(DateTime ist)
+        => ist.ToString("dd MMM yyyy hh:mm tt");
+
     public static DateTime ToIstDateTime(DateTime utc)
         => TimeZoneInfo.ConvertTimeFromUtc(utc, Ist);
 

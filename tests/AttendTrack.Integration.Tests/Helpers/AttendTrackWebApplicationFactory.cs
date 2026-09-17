@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
@@ -51,16 +50,41 @@ public sealed class AttendTrackWebApplicationFactory
         .Build();
 #pragma warning restore CS0618
 
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    // Program.cs reads Jwt:SecretKey (and AddInfrastructure reads the connection
+    // strings) directly off `builder.Configuration` *before* `builder.Build()` runs.
+    // WebApplicationFactory's ConfigureAppConfiguration overrides are only merged in
+    // when the deferred test host builder runs as part of that Build() call, so they
+    // arrive too late for that early code and are silently ignored. Environment
+    // variables, however, are picked up immediately by WebApplication.CreateBuilder's
+    // own AddEnvironmentVariables() source, so they're set here instead.
+    public AttendTrackWebApplicationFactory()
+    {
+        Environment.SetEnvironmentVariable("Jwt__SecretKey", "integration-test-secret-key-min32chars!!");
+        Environment.SetEnvironmentVariable("Jwt__Issuer", "AttendTrack");
+        Environment.SetEnvironmentVariable("Jwt__Audience", "AttendTrackUsers");
+        Environment.SetEnvironmentVariable("Hikvision__FaceCapturePath", Path.GetTempPath());
+        Environment.SetEnvironmentVariable("ConnectionStrings__Redis", ""); // Disables Redis → uses IMemoryCache
+    }
+
     // ── IAsyncLifetime ────────────────────────────────────────────────────────
 
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
 
-        // Trigger host build + DB migration/creation + seed data
+        // Must be set before the first Services access below, which triggers host build.
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
+
+        // Trigger host build + apply real migrations + seed data.
+        // NOTE: EnsureCreatedAsync() is NOT sufficient here — the Testcontainers Postgres
+        // image already creates the (empty) database as part of container startup, so EF
+        // sees "database exists" and skips schema creation entirely, leaving zero tables.
+        // Applying the actual migrations also exercises the real deployment path.
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AttendTrackDbContext>();
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.MigrateAsync();
         await SeedAsync(db);
     }
 
@@ -75,17 +99,6 @@ public sealed class AttendTrackWebApplicationFactory
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-
-        // Override connection strings BEFORE AddInfrastructure runs them
-        builder.ConfigureAppConfiguration(config =>
-        {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:DefaultConnection"] = _postgres.GetConnectionString(),
-                ["ConnectionStrings:Redis"]             = "",   // Disables Redis → uses IMemoryCache
-                ["Hikvision:FaceCapturePath"]           = Path.GetTempPath()
-            });
-        });
 
         builder.ConfigureTestServices(services =>
         {

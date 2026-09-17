@@ -19,7 +19,11 @@ public sealed class HikvisionEventLogConfiguration : IEntityTypeConfiguration<Hi
         b.Property(e => e.CardNo)                .HasMaxLength(100);
         b.Property(e => e.FaceCaptureStoragePath).HasMaxLength(500);
         b.Property(e => e.ProcessingError)       .HasMaxLength(500);
-        b.Property(e => e.DeviceLocalTime)       .HasColumnType("timestamptz").IsRequired();
+        // DeviceLocalTime is a wall-clock IST reading (not a UTC instant, unlike every
+        // other DateTime in this schema) — "timestamp without time zone" stores it as-is
+        // without Npgsql demanding Kind=Utc, and without silently shifting it by the
+        // UTC offset the way "timestamptz" would.
+        b.Property(e => e.DeviceLocalTime)       .HasColumnType("timestamp without time zone").IsRequired();
         b.Property(e => e.ReceivedAtUtc)         .HasColumnType("timestamptz").IsRequired();
         b.Property(e => e.RawPayload)            .HasColumnType("text").IsRequired();
 

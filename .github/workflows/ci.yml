@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore AttendTrack.sln
+
+      - name: Build
+        run: dotnet build AttendTrack.sln --no-restore -c Release
+
+      - name: Test — Domain
+        run: dotnet test tests/AttendTrack.Domain.Tests/AttendTrack.Domain.Tests.csproj --no-build -c Release --logger "console;verbosity=normal"
+
+      - name: Test — Application
+        run: dotnet test tests/AttendTrack.Application.Tests/AttendTrack.Application.Tests.csproj --no-build -c Release --logger "console;verbosity=normal"
+
+      - name: Test — Integration
+        run: dotnet test tests/AttendTrack.Integration.Tests/AttendTrack.Integration.Tests.csproj --no-build -c Release --logger "console;verbosity=normal"

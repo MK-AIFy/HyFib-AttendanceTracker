@@ -68,10 +68,6 @@ Icon
 # Docker
 docker-compose.override.yml
 
-# Migrations (keep structure, exclude compiled)
-# (EF migrations .cs files ARE committed — only exclude designer artifacts)
-*.Designer.cs
-
 # IDE temp
 *.tmp
 *.bak
