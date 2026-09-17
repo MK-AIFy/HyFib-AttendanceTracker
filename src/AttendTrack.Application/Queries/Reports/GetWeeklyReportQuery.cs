@@ -58,10 +58,17 @@ public sealed class GetWeeklyReportHandler
                     HasViolation:         !string.IsNullOrWhiteSpace(r.Notes));
             }).ToList();
 
+            // "Absent" means an employee who was already employed on `day` but has no
+            // attendance record. allEmployees is a snapshot of who is active *today*, so
+            // for earlier days in the range it must be narrowed to who had actually
+            // joined by `day` — otherwise someone hired mid-week gets counted as absent
+            // for days before they existed.
+            var eligibleCount = allEmployees.Count(e => e.JoinedAt <= day);
+
             result.Add(new DailyReportDto(
                 Date:                day.ToString("dd MMM yyyy"),
                 TotalPresent:        dtos.Count(d => d.Status == "Present"),
-                TotalAbsent:         allEmployees.Count - dtos.Count,
+                TotalAbsent:         Math.Max(0, eligibleCount - dtos.Count),
                 TotalLate:           dtos.Count(d => d.Notes?.Contains("Late") == true),
                 TotalMissedCheckout: dtos.Count(d => d.Status == "MissedCheckout"),
                 Records:             dtos.AsReadOnly()));
