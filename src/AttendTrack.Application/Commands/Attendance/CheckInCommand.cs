@@ -19,7 +19,7 @@ namespace AttendTrack.Application.Commands.Attendance;
 public sealed record CheckInCommand(
     string  EmployeeCode,
     string  Pin,
-    string? IpAddress = null) : IRequest<Guid>, IAuditableRequest;
+    string? IpAddress = null) : IRequest<Guid>, IAuditableRequest, IKioskPinRequest;
 
 public sealed class CheckInHandler : IRequestHandler<CheckInCommand, Guid>
 {
@@ -48,11 +48,9 @@ public sealed class CheckInHandler : IRequestHandler<CheckInCommand, Guid>
 
     public async Task<Guid> Handle(CheckInCommand cmd, CancellationToken ct)
     {
-        var employee = await _empRepo.GetByCodeAsync(cmd.EmployeeCode, ct).ConfigureAwait(false)
-            ?? throw new DomainException($"Employee not found: {cmd.EmployeeCode}");
-
-        if (!_hasher.Verify(cmd.Pin, employee.KioskPin.Value))
-            throw new UnauthorizedKioskException($"Invalid PIN for {cmd.EmployeeCode}");
+        var employee = await _empRepo.GetByCodeAsync(cmd.EmployeeCode, ct).ConfigureAwait(false);
+        if (employee is null || !employee.IsActive || !_hasher.Verify(cmd.Pin, employee.KioskPin.Value))
+            throw new InvalidKioskCredentialsException();
 
         var today = IstClock.TodayIst;
         var existing = await _attRepo.GetByEmployeeAndDateAsync(

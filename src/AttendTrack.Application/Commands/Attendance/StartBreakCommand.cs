@@ -16,7 +16,7 @@ namespace AttendTrack.Application.Commands.Attendance;
 public sealed record StartBreakCommand(
     string    EmployeeCode,
     string    Pin,
-    BreakType BreakType) : IRequest<Guid>, IAuditableRequest;
+    BreakType BreakType) : IRequest<Guid>, IAuditableRequest, IKioskPinRequest;
 
 public sealed class StartBreakHandler : IRequestHandler<StartBreakCommand, Guid>
 {
@@ -42,11 +42,9 @@ public sealed class StartBreakHandler : IRequestHandler<StartBreakCommand, Guid>
 
     public async Task<Guid> Handle(StartBreakCommand cmd, CancellationToken ct)
     {
-        var employee = await _empRepo.GetByCodeAsync(cmd.EmployeeCode, ct).ConfigureAwait(false)
-            ?? throw new DomainException($"Employee not found: {cmd.EmployeeCode}");
-
-        if (!_hasher.Verify(cmd.Pin, employee.KioskPin.Value))
-            throw new UnauthorizedKioskException($"Invalid PIN for {cmd.EmployeeCode}");
+        var employee = await _empRepo.GetByCodeAsync(cmd.EmployeeCode, ct).ConfigureAwait(false);
+        if (employee is null || !employee.IsActive || !_hasher.Verify(cmd.Pin, employee.KioskPin.Value))
+            throw new InvalidKioskCredentialsException();
 
         var today  = IstClock.TodayIst;
         var record = await _attRepo.GetByEmployeeAndDateAsync(employee.Id, today, ct).ConfigureAwait(false)

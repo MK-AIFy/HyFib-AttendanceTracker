@@ -25,10 +25,14 @@ public static class DependencyInjection
         // Pipeline behaviours — ORDER MATTERS.
         // MediatR executes them in registration order (first registered = outermost).
         // Desired runtime flow:
-        //   request → Validation → Logging → Audit → Concurrency → Handler
+        //   request → Validation → KioskLockout → Logging → Audit → Concurrency → Handler
         //   Validation runs first so we never log/audit invalid commands.
+        //   KioskLockout runs next — a cheap Redis check that should short-circuit
+        //   locked-out kiosk PIN attempts before they're logged/audited, mirroring
+        //   AuthController.Login checking lockout before touching the DB.
         //   Concurrency wraps the handler closest so it catches DbUpdate* and maps to 409.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(KioskLockoutBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditBehaviour<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ConcurrencyBehaviour<,>));

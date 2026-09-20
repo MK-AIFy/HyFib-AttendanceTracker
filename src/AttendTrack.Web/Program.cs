@@ -37,6 +37,14 @@ try
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
 
+    // Kiosk IP whitelist — shared CIDR matcher plus a CircuitHandler that captures
+    // each circuit's originating IP, so /kiosk can be IP-gated even when reached
+    // via in-circuit client-side navigation (see KioskCircuitHandler).
+    builder.Services.AddSingleton<AttendTrack.Web.Security.KioskIpRangeMatcher>();
+    builder.Services.AddScoped<AttendTrack.Web.Security.KioskCircuitIpProvider>();
+    builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,
+        AttendTrack.Web.Security.KioskCircuitHandler>();
+
     // API Controllers
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();
