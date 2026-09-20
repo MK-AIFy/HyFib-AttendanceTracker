@@ -27,7 +27,7 @@
         </button>
         @if (!string.IsNullOrEmpty(_message))
         {
-            <div class="alert alert-success mt-3 py-2 small">@_message</div>
+            <div class="alert @(_isError ? "alert-danger" : "alert-success") mt-3 py-2 small">@_message</div>
         }
     </div>
 </div>

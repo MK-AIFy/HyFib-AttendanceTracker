@@ -1,6 +1,7 @@
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -8,6 +9,7 @@ public sealed partial class Shifts : ComponentBase
 {
     [Inject] private ISender         Sender    { get; set; } = default!;
     [Inject] private IShiftRepository ShiftRepo { get; set; } = default!;
+    [Inject] private ILogger<Shifts>  Logger    { get; set; } = default!;
 
     private IReadOnlyList<Shift> _shifts = [];
     private bool _loading = true;
@@ -50,7 +52,17 @@ public sealed partial class Shifts : ComponentBase
         if (!TimeOnly.TryParse(_fEnd, out var end))
         { _formError = "Invalid end time (HH:mm)."; return; }
 
-        await Sender.Send(new CreateShiftCommand(_fName, start, end, _fGrace, _fOt));
+        try
+        {
+            await Sender.Send(new CreateShiftCommand(_fName, start, end, _fGrace, _fOt));
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+            Logger.LogError(ex, "Shifts SaveAsync failed");
+            return;
+        }
+
         _showModal = false;
         await LoadDataAsync();
     }

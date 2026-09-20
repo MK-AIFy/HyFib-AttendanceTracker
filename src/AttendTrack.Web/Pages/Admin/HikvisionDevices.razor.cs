@@ -2,6 +2,7 @@ using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -12,6 +13,7 @@ public sealed partial class HikvisionDevices : ComponentBase
     [Inject] private ISender Sender { get; set; } = default!;
     [Inject] private IHikvisionDeviceRepository DeviceRepo { get; set; } = default!;
     [Inject] private IEmployeeRepository EmployeeRepo { get; set; } = default!;
+    [Inject] private ILogger<HikvisionDevices> Logger { get; set; } = default!;
 
     private IReadOnlyList<HikvisionDevice> _devices = [];
     private Dictionary<string, IReadOnlyList<HikvisionEventLog>> _eventLogs = [];
@@ -102,31 +104,48 @@ public sealed partial class HikvisionDevices : ComponentBase
             return;
         }
 
-        var result = await Sender.Send(new EnrollEmployeeToDeviceCommand(
-            EmployeeId: employee.Id.Value,
-            DeviceId: deviceId,
-            FacePhotoBytes: _enrollFaceBytes));
-
-        _enrollSuccess = result.Success;
-        _enrollMessage = result.Success
-            ? "Employee enrolled successfully."
-            : $"Enrollment failed: {result.ErrorMessage}";
-
-        if (result.Success)
+        try
         {
-            _enrollFaceBytes = Array.Empty<byte>();
-            _enrollFaceFilename = string.Empty;
-            _enrollCode = string.Empty;
-            await LoadDataAsync();
+            var result = await Sender.Send(new EnrollEmployeeToDeviceCommand(
+                EmployeeId: employee.Id.Value,
+                DeviceId: deviceId,
+                FacePhotoBytes: _enrollFaceBytes));
+
+            _enrollSuccess = result.Success;
+            _enrollMessage = result.Success
+                ? "Employee enrolled successfully."
+                : $"Enrollment failed: {result.ErrorMessage}";
+
+            if (result.Success)
+            {
+                _enrollFaceBytes = Array.Empty<byte>();
+                _enrollFaceFilename = string.Empty;
+                _enrollCode = string.Empty;
+                await LoadDataAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _enrollSuccess = false;
+            _enrollMessage = $"Enrollment failed: {ex.Message}";
+            Logger.LogError(ex, "HikvisionDevices EnrollEmployeeAsync failed for device {DeviceId}", deviceId);
         }
     }
 
     private async Task SyncDeviceAsync(Guid deviceId)
     {
         _syncMessage = "Syncing...";
-        var result = await Sender.Send(new SyncDeviceEventsCommand(deviceId, DateTime.UtcNow.AddHours(-1)));
-        _syncMessage = $"Sync complete — {result.EventsProcessed} events processed.";
-        await LoadDataAsync();
+        try
+        {
+            var result = await Sender.Send(new SyncDeviceEventsCommand(deviceId, DateTime.UtcNow.AddHours(-1)));
+            _syncMessage = $"Sync complete — {result.EventsProcessed} events processed.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _syncMessage = $"Sync failed: {ex.Message}";
+            Logger.LogError(ex, "HikvisionDevices SyncDeviceAsync failed for device {DeviceId}", deviceId);
+        }
         StateHasChanged();
         await Task.Delay(3000);
         _syncMessage = string.Empty;

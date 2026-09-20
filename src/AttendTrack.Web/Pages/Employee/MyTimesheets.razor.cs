@@ -4,6 +4,7 @@ using AttendTrack.Application.Queries.Attendance;
 using AttendTrack.Infrastructure.Security;
 using MediatR;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Employee;
 
@@ -12,10 +13,12 @@ public sealed partial class MyTimesheets : ComponentBase
     [Inject] private ISender              Sender      { get; set; } = default!;
     [Inject] private ICurrentUserService  CurrentUser { get; set; } = default!;
     [Inject] private NavigationManager    Nav         { get; set; } = default!;
+    [Inject] private ILogger<MyTimesheets> Logger     { get; set; } = default!;
 
     private IReadOnlyList<AttendanceDto> _records = [];
     private DateOnly _weekStart = GetMondayOf(IstTimeHelper.TodayIst);
     private bool _loading;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
@@ -32,9 +35,21 @@ public sealed partial class MyTimesheets : ComponentBase
         if (CurrentUser.UserId is null) return;
 
         _loading = true;
-        _records = await Sender.Send(new GetEmployeeAttendanceHistoryQuery(
-            CurrentUser.UserId.Value, _weekStart, _weekStart.AddDays(6)));
-        _loading = false;
+        _error = null;
+        try
+        {
+            _records = await Sender.Send(new GetEmployeeAttendanceHistoryQuery(
+                CurrentUser.UserId.Value, _weekStart, _weekStart.AddDays(6)));
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load your timesheet. Please try again.";
+            Logger.LogError(ex, "MyTimesheets LoadDataAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task PrevWeek()

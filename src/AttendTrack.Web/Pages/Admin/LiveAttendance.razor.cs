@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -6,10 +7,12 @@ public sealed partial class LiveAttendance : ComponentBase, IAsyncDisposable
 {
     [Inject] private ISender Sender { get; set; } = default!;
     [Inject] private AttendanceNotifier Notifier { get; set; } = default!;
+    [Inject] private ILogger<LiveAttendance> Logger { get; set; } = default!;
 
     private IReadOnlyList<AttendanceDto> _records = [];
     private string _searchTerm = string.Empty;
     private bool _loading = true;
+    private string? _error;
 
     private IEnumerable<AttendanceDto> FilteredRecords
         => string.IsNullOrWhiteSpace(_searchTerm)
@@ -27,8 +30,20 @@ public sealed partial class LiveAttendance : ComponentBase, IAsyncDisposable
     private async Task LoadDataAsync()
     {
         _loading = true;
-        _records = await Sender.Send(new GetLiveAttendanceQuery());
-        _loading = false;
+        _error = null;
+        try
+        {
+            _records = await Sender.Send(new GetLiveAttendanceQuery());
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load live attendance. Please try again.";
+            Logger.LogError(ex, "LiveAttendance LoadDataAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void OnSearch(ChangeEventArgs e)
