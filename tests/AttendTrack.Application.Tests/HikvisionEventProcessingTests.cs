@@ -282,5 +282,105 @@ public sealed class HikvisionEventProcessingTests
                 Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    // ─── Test 7: Race condition on SaveChangesAsync is absorbed, not thrown ───
+
+    [Fact]
+    public async Task Handle_UniqueViolationOnSaveChanges_DoesNotThrow_ReturnsGracefully()
+    {
+        // Previously, SaveChangesAsync() was called *outside* the try/catch that handles
+        // unique-constraint violations — the in-memory duplicate check
+        // (GetByEmployeeAndDateAsync returning null) passes, so ProcessCheckInAsync adds
+        // the record to the tracker, but the *second* SaveChangesAsync call (the real DB
+        // write) is what a genuine race would fail on. This simulates exactly that: no
+        // existing record found (so no AlreadyCheckedInException), but SaveChangesAsync
+        // itself throws a 23505 unique-violation, as Postgres would for two near-
+        // simultaneous check-ins for the same employee+day.
+        var (handler, _, employeeRepo, attendanceRepo, shiftRepo, uow) = BuildHandler();
+        var employee = MakeEmployee();
+        var shift    = MakeShift();
+
+        employeeRepo.Setup(r => r.GetByCodeAsync("EMP-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(employee);
+        shiftRepo.Setup(r => r.GetByIdAsync(employee.DefaultShiftId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Shift?)shift);
+        attendanceRepo.Setup(r => r.GetByEmployeeAndDateAsync(
+            It.IsAny<EmployeeId>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AttendanceRecord?)null);
+        attendanceRepo.Setup(r => r.AddAsync(It.IsAny<AttendanceRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // First SaveChangesAsync call (archiving the event log, Step 2) must still
+        // succeed; only the *second* call (Step 7, the real attendance write) races.
+        var saveCount = 0;
+        uow.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                saveCount++;
+                if (saveCount == 2)
+                    throw new InvalidOperationException(
+                        "23505: duplicate key value violates unique constraint " +
+                        "\"IX_attendance_records_employee_id_WorkDate\"");
+                return 1;
+            });
+
+        var cmd = new ProcessHikvisionEventCommand(CheckInXml, null, DateTime.UtcNow);
+
+        var act = async () => await handler.Handle(cmd, CancellationToken.None);
+        await act.Should().NotThrowAsync(
+            "a genuine race on the unique constraint must be absorbed, matching the " +
+            "documented \"always 200, device retries on non-200\" webhook contract");
+    }
+
+    // ─── Test 8: Oversized device-sourced fields are truncated, not rejected ──
+
+    [Fact]
+    public async Task Handle_OversizedEmployeeCode_TruncatesToColumnLimit_DoesNotThrow()
+    {
+        // HikvisionEventLog.EmployeeCode is capped at 20 chars (HikvisionEventLogConfiguration).
+        // Before this fix, a device sending a longer employeeNoString (firmware quirk or
+        // malformed/spoofed payload) would hit an uncaught Postgres 22001 "value too long"
+        // from SaveChangesAsync, producing a 500 instead of the documented always-200
+        // contract. This asserts the value actually persisted to the event log is
+        // truncated to 20 chars rather than the handler throwing.
+        var longCode = new string('X', 45); // well over the 20-char cap
+        var xml = $"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <EventNotificationAlert version="2.0">
+              <macAddress>AA:BB:CC:DD:EE:FF</macAddress>
+              <dateTime>2025-01-15T09:03:25+05:30</dateTime>
+              <eventType>AccessControllerEvent</eventType>
+              <AccessControllerEvent>
+                <employeeNoString>{longCode}</employeeNoString>
+                <name>John Doe</name>
+                <currentVerifyMode>face</currentVerifyMode>
+                <attendanceStatus>checkIn</attendanceStatus>
+              </AccessControllerEvent>
+            </EventNotificationAlert>
+            """;
+
+        var (handler, deviceRepo, employeeRepo, _, _, _) = BuildHandler();
+
+        // Employee lookup by the *untruncated* code legitimately finds nobody — that's a
+        // separate, already-handled path (Handle_UnknownEmployee_LogsError_NoException).
+        // This test only cares that archiving the event log itself doesn't throw, and
+        // that what gets archived is capped.
+        employeeRepo.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Employee?)null);
+
+        HikvisionEventLog? captured = null;
+        deviceRepo.Setup(r => r.AddEventLogAsync(It.IsAny<HikvisionEventLog>(), It.IsAny<CancellationToken>()))
+            .Callback<HikvisionEventLog, CancellationToken>((log, _) => captured = log)
+            .Returns(Task.CompletedTask);
+
+        var cmd = new ProcessHikvisionEventCommand(xml, null, DateTime.UtcNow);
+
+        var act = async () => await handler.Handle(cmd, CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        captured.Should().NotBeNull();
+        captured!.EmployeeCode.Length.Should().Be(20, "must be truncated to the column's HasMaxLength(20)");
+        captured.EmployeeCode.Should().Be(longCode[..20]);
+    }
 }
 
