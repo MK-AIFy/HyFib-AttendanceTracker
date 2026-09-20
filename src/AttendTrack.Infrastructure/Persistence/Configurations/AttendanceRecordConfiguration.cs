@@ -70,6 +70,18 @@ public sealed class AttendanceRecordConfiguration : IEntityTypeConfiguration<Att
             .HasColumnName("break_duration_minutes")
             .HasDefaultValueSql("0");
 
+        // No FK to Employee existed here at all — an AttendanceRecord could reference a
+        // nonexistent employee_id with zero DB-level protection, and
+        // DataRetentionPurgeService's hard-delete of expired employees (7-year DPDP
+        // window) silently orphaned every attendance_records/hourly_slots/BreakRecords
+        // row instead of actually cascading, despite its own doc comment claiming
+        // otherwise. Cascade (not Restrict): employee deletion is meant to remove the
+        // employee's attendance history, that's the entire point of the purge service.
+        b.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(r => r.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // EF Core navigation via backing fields
         b.HasMany(r => r.HourlySlots)
             .WithOne()

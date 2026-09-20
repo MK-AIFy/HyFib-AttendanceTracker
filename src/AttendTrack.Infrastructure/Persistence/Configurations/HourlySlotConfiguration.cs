@@ -32,6 +32,14 @@ public sealed class HourlySlotConfiguration : IEntityTypeConfiguration<HourlySlo
 
         b.Property(s => s.CreatedAt).HasColumnType("timestamptz").IsRequired();
         b.Property(s => s.UpdatedAt).HasColumnType("timestamptz").IsRequired();
+
+        // EmployeeId here (a plain Guid, unlike AttendanceRecord.EmployeeId which is the
+        // EmployeeId value object — EF can't build a direct FK across that CLR type
+        // boundary without widening this entity's public API) is a denormalized copy of
+        // AttendanceRecord.EmployeeId. It's already cascade-deleted transitively via
+        // AttendanceRecordId -> AttendanceRecord -> Employee (see
+        // AttendanceRecordConfiguration), which is what actually fixes the orphaned-data
+        // bug in DataRetentionPurgeService's employee purge.
     }
 }
 
