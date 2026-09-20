@@ -70,27 +70,59 @@ public sealed class HourlyTrackerService : BackgroundService
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        if (openRecords.Count == 0) return;
+
+        // Batch-load every existing slot for these records in ONE query, instead of
+        // a SELECT-then-write round trip per slot per record per tick (the previous
+        // UpsertAsync-per-slot pattern). Also tells ComputeHourlySlots, per record,
+        // whether this is its first-ever tick (no rows yet — needs a full backfill
+        // from check-in) or a steady-state one (only the current/previous hour can
+        // still change) — see its own comment.
+        var existingByRecord = await hourlySlotRepository.GetByAttendanceIdsAsync(
+            openRecords.Select(r => r.Id), ct).ConfigureAwait(false);
+
         foreach (var record in openRecords)
         {
-            var slots = ComputeHourlySlots(record, nowUtc);
-            foreach (var slot in slots)
-                await hourlySlotRepository.UpsertAsync(slot, ct).ConfigureAwait(false);
+            existingByRecord.TryGetValue(record.Id, out var existingSlots);
+            var existingByHour = (existingSlots ?? Array.Empty<HourlySlot>())
+                .ToDictionary(s => s.HourSlotNumber);
+
+            var computed = ComputeHourlySlots(record, nowUtc, backfillFromCheckIn: existingByHour.Count == 0);
+            foreach (var slot in computed)
+            {
+                if (existingByHour.TryGetValue(slot.HourSlotNumber, out var existing))
+                {
+                    existing.Update(slot.MinutesWorked, slot.IsBreak, slot.IsOvertime);
+                    hourlySlotRepository.Update(existing);
+                }
+                else
+                {
+                    await hourlySlotRepository.AddAsync(slot, ct).ConfigureAwait(false);
+                }
+            }
         }
 
-        if (openRecords.Count > 0)
-        {
-            await uow.SaveChangesAsync(ct).ConfigureAwait(false);
-            _logger.LogDebug("HourlyTrackerService: updated slots for {Count} open records",
-                openRecords.Count);
-        }
+        await uow.SaveChangesAsync(ct).ConfigureAwait(false);
+        _logger.LogDebug("HourlyTrackerService: updated slots for {Count} open records",
+            openRecords.Count);
     }
 
     /// <summary>
     /// Calculates how many minutes the employee worked within each IST hour slot
     /// between check-in and now (or checkout if available).
+    ///
+    /// <paramref name="backfillFromCheckIn"/> controls how far back to recompute:
+    /// true (a record's first-ever tick, no HourlySlot rows exist yet) walks every
+    /// hour since check-in, same as before. false (steady state — every earlier
+    /// tick already stored a final value for every fully-elapsed hour) caps the
+    /// walk to the current hour plus the immediately preceding one (in case a tick
+    /// was missed right at an hour boundary, e.g. after a restart), bounding the
+    /// work to at most 2 slots/record/tick regardless of how long the shift has
+    /// been open — previously this recomputed every elapsed hour on every single
+    /// tick, growing unboundedly through the day.
     /// </summary>
     private static List<HourlySlot> ComputeHourlySlots(
-        AttendanceRecord record, DateTime nowUtc)
+        AttendanceRecord record, DateTime nowUtc, bool backfillFromCheckIn)
     {
         var checkInUtc  = record.CheckInTime!.Value;
         var checkOutUtc = record.CheckOutTime ?? nowUtc;
@@ -99,10 +131,25 @@ public sealed class HourlyTrackerService : BackgroundService
         var checkInIst  = IstTimeHelper.ToIstDateTime(checkInUtc);
         var checkOutIst = IstTimeHelper.ToIstDateTime(checkOutUtc);
 
-        var slots = new List<HourlySlot>();
-        var current = new DateTime(
+        var checkInHourStart = new DateTime(
             checkInIst.Year, checkInIst.Month, checkInIst.Day,
             checkInIst.Hour, 0, 0, DateTimeKind.Unspecified);
+
+        DateTime current;
+        if (backfillFromCheckIn)
+        {
+            current = checkInHourStart;
+        }
+        else
+        {
+            var currentHourStart = new DateTime(
+                checkOutIst.Year, checkOutIst.Month, checkOutIst.Day,
+                checkOutIst.Hour, 0, 0, DateTimeKind.Unspecified);
+            var recomputeFrom = currentHourStart.AddHours(-1);
+            current = recomputeFrom > checkInHourStart ? recomputeFrom : checkInHourStart;
+        }
+
+        var slots = new List<HourlySlot>();
 
         while (current < checkOutIst)
         {

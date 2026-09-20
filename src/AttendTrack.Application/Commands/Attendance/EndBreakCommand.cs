@@ -53,7 +53,7 @@ public sealed class EndBreakHandler : IRequestHandler<EndBreakCommand>
         var activeBreak = record.Breaks.FirstOrDefault(b => b.IsActive)
             ?? throw new NotCheckedInException(employee.Id.Value);
 
-        record.EndBreak(activeBreak.Id, PunchSource.BlazorKiosk);
+        record.EndBreak(activeBreak.Id, PunchSource.BlazorKiosk, DateTime.UtcNow);
         _attRepo.Update(record);
         await _uow.SaveChangesAsync(ct).ConfigureAwait(false);
 

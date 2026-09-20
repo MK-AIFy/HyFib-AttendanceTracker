@@ -207,4 +207,56 @@ public sealed class AttendanceRecordTests
         record.FaceCaptureImagePath.Should()
             .Be("/app/face-captures/20250115/EMP-001_090500.jpg");
     }
+
+    // ── Test 8: StartBreak uses the supplied timestamp, not DateTime.UtcNow ──
+
+    [Fact]
+    public void StartBreak_UsesSuppliedTimestamp_NotServerReceivedTime()
+    {
+        // StartBreak/EndBreak used to hardcode DateTime.UtcNow internally, unlike
+        // CheckIn/CheckOut which always took the device's real event time — most
+        // damaging via the ISAPI polling fallback, which catches up on a backlog of
+        // events (e.g. after a webhook outage) and could process a breakIn from
+        // hours ago in a single pass; stamping "now" instead of the device's actual
+        // time silently corrupted break duration. A timestamp well in the past
+        // proves the supplied value is what's actually stored, not the wall clock.
+        var shift          = MakeMorningShift();
+        var employeeId     = NewEmployeeId();
+        var checkInUtc     = IstToUtc(9, 0);
+        var workDate       = DateOnly.FromDateTime(checkInUtc.Add(TimeSpan.FromHours(5.5)));
+        var deviceBreakUtc = checkInUtc.AddHours(2); // well in the past relative to "now"
+
+        var record = AttendanceRecord.CheckIn(
+            employeeId: employeeId, shift: shift, workDate: workDate,
+            checkInTimeUtc: checkInUtc, source: PunchSource.Hikvision);
+
+        var breakRecord = record.StartBreak(BreakType.Short, PunchSource.Hikvision, deviceBreakUtc);
+
+        breakRecord.StartTime.Should().Be(deviceBreakUtc);
+        breakRecord.StartTime.Should().NotBeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    // ── Test 9: EndBreak uses the supplied timestamp, not DateTime.UtcNow ────
+
+    [Fact]
+    public void EndBreak_UsesSuppliedTimestamp_NotServerReceivedTime()
+    {
+        var shift          = MakeMorningShift();
+        var employeeId     = NewEmployeeId();
+        var checkInUtc     = IstToUtc(9, 0);
+        var workDate       = DateOnly.FromDateTime(checkInUtc.Add(TimeSpan.FromHours(5.5)));
+        var breakStartUtc  = checkInUtc.AddHours(2);
+        var breakEndUtc    = checkInUtc.AddHours(2).AddMinutes(15); // still well in the past
+
+        var record = AttendanceRecord.CheckIn(
+            employeeId: employeeId, shift: shift, workDate: workDate,
+            checkInTimeUtc: checkInUtc, source: PunchSource.Hikvision);
+        var breakRecord = record.StartBreak(BreakType.Short, PunchSource.Hikvision, breakStartUtc);
+
+        record.EndBreak(breakRecord.Id, PunchSource.Hikvision, breakEndUtc);
+
+        breakRecord.EndTime.Should().Be(breakEndUtc);
+        breakRecord.Duration.Should().Be(TimeSpan.FromMinutes(15));
+        breakRecord.EndTime.Should().NotBeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
+    }
 }

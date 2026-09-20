@@ -233,6 +233,25 @@ public sealed class ProcessHikvisionEventHandler
             record = null;
             await _uow.SaveChangesAsync(ct);
         }
+        catch (ConcurrencyException ex)
+        {
+            // AttendanceRecord.Version (xmin) conflict. checkOut/breakIn/breakOut all
+            // load-then-Update an existing tracked record — if another writer (the
+            // webhook and polling fallback delivering the same event, or two
+            // near-simultaneous device events) already bumped its xmin since this
+            // handler loaded it, SaveChangesAsync throws DbUpdateConcurrencyException,
+            // which UnitOfWork wraps into this ConcurrencyException. Previously only
+            // the checkIn unique-violation race below was caught here — this one
+            // propagated uncaught, producing the same 500-instead-of-200 failure this
+            // handler otherwise absorbs, and since the device retries on any non-200,
+            // a permanent retry storm of an event that will keep losing the race.
+            // Not retrying SaveChangesAsync, same reasoning as the unique-violation
+            // catch below: `record` is tracked in a failed Modified state, retrying
+            // would just replay the same failing update.
+            _logger.LogWarning(ex,
+                "Concurrency conflict for {Code} — ignored", parsed.EmployeeNoString);
+            record = null;
+        }
         catch (Exception ex) when (IsUniqueViolation(ex))
         {
             // Deliberately NOT retrying SaveChangesAsync here: `record` is still tracked
@@ -301,7 +320,7 @@ public sealed class ProcessHikvisionEventHandler
         var record   = await _attendanceRepo.GetByEmployeeAndDateAsync(employee.Id, workDate, ct);
         if (record is null) return null;
 
-        record.StartBreak(BreakType.Short, PunchSource.Hikvision);
+        record.StartBreak(BreakType.Short, PunchSource.Hikvision, parsed.EventTimeUtc);
         _attendanceRepo.Update(record);
         return record;
     }
@@ -320,7 +339,7 @@ public sealed class ProcessHikvisionEventHandler
             return record;
         }
 
-        record.EndBreak(activeBreak.Id, PunchSource.Hikvision);
+        record.EndBreak(activeBreak.Id, PunchSource.Hikvision, parsed.EventTimeUtc);
         _attendanceRepo.Update(record);
         return record;
     }

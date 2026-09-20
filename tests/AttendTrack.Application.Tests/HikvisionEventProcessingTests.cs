@@ -4,6 +4,7 @@ using AttendTrack.Application.Options;
 using AttendTrack.Application.Parsers;
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Enums;
+using AttendTrack.Domain.Exceptions;
 using AttendTrack.Domain.Interfaces;
 using AttendTrack.Domain.Interfaces.Repositories;
 using AttendTrack.Domain.ValueObjects;
@@ -383,8 +384,130 @@ public sealed class HikvisionEventProcessingTests
         captured.EmployeeCode.Should().Be(longCode[..20]);
     }
 
-    // ─── Test 9: Notifier fires after commit, and a throwing subscriber doesn't
-    //             prevent the event from being processed ───────────────────────
+    // ─── Test 9: xmin concurrency conflict on checkOut is absorbed, not thrown ─
+
+    [Fact]
+    public async Task Handle_ConcurrencyConflictOnCheckOut_DoesNotThrow_ReturnsGracefully()
+    {
+        // Only the checkIn unique-violation race (Test 7) was previously caught here.
+        // checkOut/breakIn/breakOut all load-then-Update an existing tracked record —
+        // if another writer (the webhook and polling fallback delivering the same
+        // event, or two near-simultaneous device events) already bumped its xmin
+        // since this handler loaded it, SaveChangesAsync throws
+        // DbUpdateConcurrencyException, which UnitOfWork wraps into ConcurrencyException.
+        // This simulates exactly that on the real attendance write (the second
+        // SaveChangesAsync call — the first, archiving the event log, must still
+        // succeed) and asserts the handler absorbs it per the documented always-200
+        // webhook contract, instead of letting it propagate as an unhandled 500.
+        var checkOutXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <EventNotificationAlert version="2.0">
+              <macAddress>AA:BB:CC:DD:EE:FF</macAddress>
+              <dateTime>2025-01-15T18:05:00+05:30</dateTime>
+              <eventType>AccessControllerEvent</eventType>
+              <AccessControllerEvent>
+                <employeeNoString>EMP-001</employeeNoString>
+                <name>John Doe</name>
+                <currentVerifyMode>face</currentVerifyMode>
+                <attendanceStatus>checkOut</attendanceStatus>
+              </AccessControllerEvent>
+            </EventNotificationAlert>
+            """;
+
+        var (handler, _, employeeRepo, attendanceRepo, shiftRepo, uow) = BuildHandler();
+        var employee = MakeEmployee();
+        var shift    = MakeShift();
+
+        var openRecord = AttendanceRecord.CheckIn(
+            employeeId:     employee.Id,
+            shift:          shift,
+            workDate:       DateOnly.FromDateTime(DateTime.UtcNow),
+            checkInTimeUtc: DateTime.UtcNow.AddHours(-9),
+            source:         PunchSource.Hikvision);
+
+        employeeRepo.Setup(r => r.GetByCodeAsync("EMP-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(employee);
+        shiftRepo.Setup(r => r.GetByIdAsync(employee.DefaultShiftId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(shift);
+        attendanceRepo.Setup(r => r.GetByEmployeeAndDateAsync(
+            It.IsAny<EmployeeId>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(openRecord);
+
+        var saveCount = 0;
+        uow.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                saveCount++;
+                if (saveCount == 2)
+                    throw new ConcurrencyException(
+                        "A concurrency conflict occurred. The record was modified by another process.");
+                return 1;
+            });
+
+        var cmd = new ProcessHikvisionEventCommand(checkOutXml, null, DateTime.UtcNow);
+
+        var act = async () => await handler.Handle(cmd, CancellationToken.None);
+        await act.Should().NotThrowAsync(
+            "an xmin conflict on checkOut must be absorbed, matching the documented " +
+            "\"always 200, device retries on non-200\" webhook contract");
+    }
+
+    // ─── Test 10: breakIn event uses the device's event time, not server-received time ─
+
+    [Fact]
+    public async Task Handle_BreakInEvent_UsesDeviceEventTime_NotServerReceivedTime()
+    {
+        // StartBreak used to hardcode DateTime.UtcNow internally regardless of the
+        // parsed device event time. Most damaging via the ISAPI polling fallback,
+        // which can process a backlog of events (e.g. after a webhook outage) in one
+        // pass — a breakIn from hours ago would still get stamped with "now",
+        // silently corrupting break duration. dateTime here is deliberately far from
+        // "now" so the assertion can't pass by coincidence.
+        var breakInXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <EventNotificationAlert version="2.0">
+              <macAddress>AA:BB:CC:DD:EE:FF</macAddress>
+              <dateTime>2020-06-01T13:00:00+05:30</dateTime>
+              <eventType>AccessControllerEvent</eventType>
+              <AccessControllerEvent>
+                <employeeNoString>EMP-001</employeeNoString>
+                <name>John Doe</name>
+                <currentVerifyMode>face</currentVerifyMode>
+                <attendanceStatus>breakIn</attendanceStatus>
+              </AccessControllerEvent>
+            </EventNotificationAlert>
+            """;
+        var expectedEventTimeUtc = new DateTime(2020, 6, 1, 7, 30, 0, DateTimeKind.Utc); // 13:00 IST - 5:30
+
+        var (handler, _, employeeRepo, attendanceRepo, shiftRepo, _) = BuildHandler();
+        var employee = MakeEmployee();
+        var shift    = MakeShift();
+
+        var openRecord = AttendanceRecord.CheckIn(
+            employeeId:     employee.Id,
+            shift:          shift,
+            workDate:       DateOnly.FromDateTime(expectedEventTimeUtc),
+            checkInTimeUtc: expectedEventTimeUtc.AddHours(-4),
+            source:         PunchSource.Hikvision);
+
+        employeeRepo.Setup(r => r.GetByCodeAsync("EMP-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(employee);
+        shiftRepo.Setup(r => r.GetByIdAsync(employee.DefaultShiftId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(shift);
+        attendanceRepo.Setup(r => r.GetByEmployeeAndDateAsync(
+            It.IsAny<EmployeeId>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(openRecord);
+
+        var cmd = new ProcessHikvisionEventCommand(breakInXml, null, DateTime.UtcNow);
+        await handler.Handle(cmd, CancellationToken.None);
+
+        openRecord.Breaks.Should().ContainSingle();
+        openRecord.Breaks.Single().StartTime.Should().Be(expectedEventTimeUtc);
+        openRecord.Breaks.Single().StartTime.Should().NotBeCloseTo(DateTime.UtcNow, TimeSpan.FromDays(1));
+    }
+
+    // ─── Test 11: Notifier fires after commit, and a throwing subscriber doesn't
+    //              prevent the event from being processed ──────────────────────
 
     [Fact]
     public async Task Handle_CheckInEvent_NotifiesAfterSaveChanges_AndSurvivesThrowingSubscriber()
