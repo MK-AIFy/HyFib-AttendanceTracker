@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -7,10 +8,12 @@ public sealed partial class Reports : ComponentBase
     [Inject] private ISender              Sender        { get; set; } = default!;
     [Inject] private IReportExportService ReportExport  { get; set; } = default!;
     [Inject] private IJSRuntime           JS            { get; set; } = default!;
+    [Inject] private ILogger<Reports>     Logger        { get; set; } = default!;
 
     private IReadOnlyList<DailyReportDto> _reportDays = [];
     private bool _loading;
     private bool _exporting;
+    private string? _error;
 
     // Weekly params
     private DateOnly _weekStart = IstTimeHelper.TodayIst.AddDays(-7);
@@ -26,23 +29,58 @@ public sealed partial class Reports : ComponentBase
     private async Task LoadWeeklyAsync()
     {
         _loading = true;
-        _reportDays = await Sender.Send(new GetWeeklyReportQuery(_weekStart));
-        _loading = false;
+        _error = null;
+        try
+        {
+            _reportDays = await Sender.Send(new GetWeeklyReportQuery(_weekStart));
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load the weekly report. Please try again.";
+            Logger.LogError(ex, "Reports LoadWeeklyAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task LoadMonthlyAsync()
     {
         _loading = true;
-        _reportDays = await Sender.Send(new GetMonthlyReportQuery(_year, _month));
-        _loading = false;
+        _error = null;
+        try
+        {
+            _reportDays = await Sender.Send(new GetMonthlyReportQuery(_year, _month));
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load the monthly report. Please try again.";
+            Logger.LogError(ex, "Reports LoadMonthlyAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task LoadOvertimeAsync()
     {
         _loading = true;
-        var monthly = await Sender.Send(new GetMonthlyReportQuery(_otYear, _otMonth));
-        _reportDays = monthly;
-        _loading = false;
+        _error = null;
+        try
+        {
+            _reportDays = await Sender.Send(new GetMonthlyReportQuery(_otYear, _otMonth));
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load the overtime report. Please try again.";
+            Logger.LogError(ex, "Reports LoadOvertimeAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task ExportMonthlyPdfAsync()

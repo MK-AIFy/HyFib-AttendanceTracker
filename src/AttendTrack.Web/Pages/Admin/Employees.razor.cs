@@ -4,6 +4,7 @@ using AttendTrack.Domain.Interfaces.Repositories;
 using AttendTrack.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -13,12 +14,14 @@ public sealed partial class Employees : ComponentBase
     [Inject] private IEmployeeRepository EmployeeRepo { get; set; } = default!;
     [Inject] private IShiftRepository    ShiftRepo   { get; set; } = default!;
     [Inject] private AttendTrackDbContext Db          { get; set; } = default!;
+    [Inject] private ILogger<Employees>  Logger      { get; set; } = default!;
 
     private IReadOnlyList<EmployeeDto>  _employees   = [];
     private IReadOnlyList<Shift>        _shifts      = [];
     private IReadOnlyList<Department>   _departments = [];
     private string _search = string.Empty;
     private bool _loading = true;
+    private string? _error;
 
     // Modal state
     private bool   _showModal;
@@ -91,34 +94,45 @@ public sealed partial class Employees : ComponentBase
     {
         _formError = string.Empty;
 
-        if (_editId.HasValue)
+        try
         {
-            if (string.IsNullOrWhiteSpace(_fName) || string.IsNullOrWhiteSpace(_fEmail))
-            { _formError = "Name and email are required."; return; }
+            if (_editId.HasValue)
+            {
+                if (string.IsNullOrWhiteSpace(_fName) || string.IsNullOrWhiteSpace(_fEmail))
+                { _formError = "Name and email are required."; return; }
 
-            await Sender.Send(new UpdateEmployeeCommand(_editId.Value, _fName, _fEmail, _fPhone));
+                await Sender.Send(new UpdateEmployeeCommand(_editId.Value, _fName, _fEmail, _fPhone));
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(_fCode) || string.IsNullOrWhiteSpace(_fName) ||
+                    string.IsNullOrWhiteSpace(_fEmail) || _fPin.Length != 6)
+                { _formError = "Code, name, email and a 6-digit PIN are required."; return; }
+
+                if (_fShiftId == Guid.Empty)
+                { _formError = "Please select a shift."; return; }
+
+                if (_fDeptId == Guid.Empty)
+                { _formError = "Please select a department."; return; }
+
+                if (!Enum.TryParse<UserRole>(_fRoleStr, out var role))
+                    role = UserRole.Employee;
+
+                await Sender.Send(new CreateEmployeeCommand(
+                    _fCode, _fName, _fEmail, _fPhone, _fPin,
+                    _fDeptId,
+                    _fShiftId,
+                    role,
+                    IstTimeHelper.TodayIst));
+            }
         }
-        else
+        catch (Exception ex)
         {
-            if (string.IsNullOrWhiteSpace(_fCode) || string.IsNullOrWhiteSpace(_fName) ||
-                string.IsNullOrWhiteSpace(_fEmail) || _fPin.Length != 6)
-            { _formError = "Code, name, email and a 6-digit PIN are required."; return; }
-
-            if (_fShiftId == Guid.Empty)
-            { _formError = "Please select a shift."; return; }
-
-            if (_fDeptId == Guid.Empty)
-            { _formError = "Please select a department."; return; }
-
-            if (!Enum.TryParse<UserRole>(_fRoleStr, out var role))
-                role = UserRole.Employee;
-
-            await Sender.Send(new CreateEmployeeCommand(
-                _fCode, _fName, _fEmail, _fPhone, _fPin,
-                _fDeptId,
-                _fShiftId,
-                role,
-                IstTimeHelper.TodayIst));
+            // Keep the modal open so the user can see the error and retry,
+            // instead of the exception propagating and tearing down the circuit.
+            _formError = ex.Message;
+            Logger.LogError(ex, "Employees SaveEmployeeAsync failed");
+            return;
         }
 
         _showModal = false;
@@ -127,7 +141,16 @@ public sealed partial class Employees : ComponentBase
 
     private async Task DeactivateAsync(Guid employeeId)
     {
-        await Sender.Send(new DeactivateEmployeeCommand(employeeId));
-        await LoadDataAsync();
+        _error = null;
+        try
+        {
+            await Sender.Send(new DeactivateEmployeeCommand(employeeId));
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Logger.LogError(ex, "Employees DeactivateAsync failed for {EmployeeId}", employeeId);
+        }
     }
 }

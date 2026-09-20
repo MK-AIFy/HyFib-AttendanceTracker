@@ -1,21 +1,40 @@
 @using AttendTrack.Web.Components
 
 <CascadingAuthenticationState>
-    <Router AppAssembly="@typeof(App).Assembly">
-        <Found Context="routeData">
-            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layouts.MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
-                </NotAuthorized>
-                <Authorizing>
-                    <p class="p-4 text-muted">Authorizing…</p>
-                </Authorizing>
-            </AuthorizeRouteView>
-        </Found>
-        <NotFound>
-            <LayoutView Layout="@typeof(Layouts.MainLayout)">
-                <h4 class="m-4">Page not found</h4>
-            </LayoutView>
-        </NotFound>
-    </Router>
+    <LoggingErrorBoundary @ref="_errorBoundary">
+        <ChildContent>
+            <Router AppAssembly="@typeof(App).Assembly">
+                <Found Context="routeData">
+                    <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layouts.MainLayout)">
+                        <NotAuthorized>
+                            <RedirectToLogin />
+                        </NotAuthorized>
+                        <Authorizing>
+                            <p class="p-4 text-muted">Authorizing…</p>
+                        </Authorizing>
+                    </AuthorizeRouteView>
+                </Found>
+                <NotFound>
+                    <LayoutView Layout="@typeof(Layouts.MainLayout)">
+                        <h4 class="m-4">Page not found</h4>
+                    </LayoutView>
+                </NotFound>
+            </Router>
+        </ChildContent>
+        <ErrorContent Context="exception">
+            <div class="p-4">
+                <div class="alert alert-danger">
+                    <h5><i class="bi bi-exclamation-triangle me-2"></i>Something went wrong</h5>
+                    <p class="mb-2">This page ran into an unexpected error. You can try again, or reload the page.</p>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="Recover">Try again</button>
+                </div>
+            </div>
+        </ErrorContent>
+    </LoggingErrorBoundary>
 </CascadingAuthenticationState>
+
+@code {
+    private LoggingErrorBoundary? _errorBoundary;
+
+    private void Recover() => _errorBoundary?.Recover();
+}

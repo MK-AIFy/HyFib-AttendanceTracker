@@ -1,14 +1,17 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
 public sealed partial class HourlyHeatMap : ComponentBase
 {
     [Inject] private ISender Sender { get; set; } = default!;
+    [Inject] private ILogger<HourlyHeatMap> Logger { get; set; } = default!;
 
     private IReadOnlyList<HourlyBreakdownDto> _breakdowns = [];
     private DateOnly _selectedDate = IstTimeHelper.TodayIst;
     private bool _loading;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
         => await LoadDataAsync();
@@ -16,8 +19,20 @@ public sealed partial class HourlyHeatMap : ComponentBase
     private async Task LoadDataAsync()
     {
         _loading = true;
-        _breakdowns = await Sender.Send(new GetHourlyBreakdownQuery(_selectedDate));
-        _loading = false;
+        _error = null;
+        try
+        {
+            _breakdowns = await Sender.Send(new GetHourlyBreakdownQuery(_selectedDate));
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load hourly breakdown. Please try again.";
+            Logger.LogError(ex, "HourlyHeatMap LoadDataAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private static string HeatColor(HourlySlotDto? slot)

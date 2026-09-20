@@ -1,6 +1,7 @@
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace AttendTrack.Web.Pages.Admin;
 
@@ -9,10 +10,12 @@ public sealed partial class Dashboard : ComponentBase, IAsyncDisposable
     [Inject] private ISender Sender { get; set; } = default!;
     [Inject] private IHikvisionDeviceRepository DeviceRepo { get; set; } = default!;
     [Inject] private AttendanceNotifier Notifier { get; set; } = default!;
+    [Inject] private ILogger<Dashboard> Logger { get; set; } = default!;
 
     private IReadOnlyList<AttendanceDto> _liveRecords = [];
     private IReadOnlyList<HikvisionDevice> _devices = [];
     private bool _loading = true;
+    private string? _error;
 
     private IEnumerable<AttendanceDto> _recentRecords
         => _liveRecords.OrderByDescending(r => r.CheckInTimeIst).Take(10);
@@ -31,9 +34,21 @@ public sealed partial class Dashboard : ComponentBase, IAsyncDisposable
     private async Task LoadDataAsync()
     {
         _loading = true;
-        _liveRecords = await Sender.Send(new GetLiveAttendanceQuery());
-        _devices = await DeviceRepo.GetActiveDevicesAsync();
-        _loading = false;
+        _error = null;
+        try
+        {
+            _liveRecords = await Sender.Send(new GetLiveAttendanceQuery());
+            _devices = await DeviceRepo.GetActiveDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed to load dashboard data. Please try again.";
+            Logger.LogError(ex, "Dashboard LoadDataAsync failed");
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private void OnAttendanceChangedHandler()
