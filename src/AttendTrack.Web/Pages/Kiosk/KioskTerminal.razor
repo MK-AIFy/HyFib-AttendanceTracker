@@ -15,12 +15,18 @@
             <br />This PIN terminal is for admin use only.
         </div>
 
-        @if (_lockedOut)
+        @if (_ipBlocked)
+        {
+            <div class="alert alert-danger text-center">
+                <i class="bi bi-shield-lock-fill fs-3 d-block mb-2"></i>
+                This terminal is not authorized from this network.
+            </div>
+        }
+        else if (_lockedOut)
         {
             <div class="alert alert-danger text-center">
                 <i class="bi bi-lock-fill fs-3 d-block mb-2"></i>
-                Terminal locked after 3 failed attempts.<br />
-                Contact your administrator.
+                @_message
             </div>
         }
         else

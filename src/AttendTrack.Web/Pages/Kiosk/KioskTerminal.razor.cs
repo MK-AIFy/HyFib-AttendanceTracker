@@ -1,3 +1,5 @@
+using AttendTrack.Domain.Exceptions;
+using AttendTrack.Web.Security;
 using Microsoft.AspNetCore.Components;
 using System.Threading;
 
@@ -5,15 +7,17 @@ namespace AttendTrack.Web.Pages.Kiosk;
 
 public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
 {
-    [Inject] private ISender            Sender   { get; set; } = default!;
-    [Inject] private AttendanceNotifier Notifier { get; set; } = default!;
+    [Inject] private ISender               Sender         { get; set; } = default!;
+    [Inject] private AttendanceNotifier    Notifier       { get; set; } = default!;
+    [Inject] private KioskCircuitIpProvider CircuitIp     { get; set; } = default!;
+    [Inject] private KioskIpRangeMatcher    IpRangeMatcher { get; set; } = default!;
 
     private string _employeeCode = string.Empty;
     private string _pin          = string.Empty;
     private string _message      = string.Empty;
     private bool   _isError;
     private bool   _lockedOut;
-    private int    _failedAttempts;
+    private bool   _ipBlocked;
     private int    _presentCount;
     private string _currentTime = string.Empty;
     private string _todayDate   = string.Empty;
@@ -23,6 +27,19 @@ public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        // Defense-in-depth: TcpIpWhitelistMiddleware only gates the initial HTTP
+        // GET to /kiosk. This Blazor Server circuit can reach this component
+        // afterwards via in-circuit client-side navigation (no fresh HTTP
+        // request, so the middleware never runs) or by connecting straight to
+        // the shared /_blazor SignalR hub, which can't be IP-restricted without
+        // blocking every other Blazor page in the app. Re-check the IP that
+        // actually opened this circuit here (see KioskCircuitHandler).
+        if (!IpRangeMatcher.IsAllowed(CircuitIp.RemoteIpAddress))
+        {
+            _ipBlocked = true;
+            return;
+        }
+
         Notifier.OnAttendanceChanged += OnAttendanceChangedHandler;
         _todayDate = IstTimeHelper.TodayIst.ToString("dd MMM yyyy");
         _clockTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
@@ -56,6 +73,13 @@ public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
                     _employeeCode = string.Empty;
                     _pin = string.Empty;
                     _message = string.Empty;
+                    // Real enforcement lives server-side (KioskLockoutBehaviour, keyed
+                    // by EmployeeCode in Redis) — clearing this locally just lets the
+                    // form reappear; a still-locked employee gets re-locked immediately
+                    // on the next submit. This is what makes the lockout self-heal
+                    // instead of requiring a page refresh (which used to bypass it
+                    // entirely, since the old counter lived only in this component).
+                    _lockedOut = false;
                     StateHasChanged();
                 });
             }
@@ -120,7 +144,6 @@ public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
 
     private void ShowSuccess(string msg)
     {
-        _failedAttempts = 0;
         _message = msg;
         _isError = false;
         _employeeCode = string.Empty;
@@ -129,11 +152,9 @@ public sealed partial class KioskTerminal : ComponentBase, IAsyncDisposable
 
     private void HandleError(Exception ex)
     {
-        _failedAttempts++;
         _isError = true;
         _message = ex.Message;
-        if (_failedAttempts >= 3)
-            _lockedOut = true;
+        _lockedOut = ex is KioskLockedOutException;
     }
 
     private void OnAttendanceChangedHandler()

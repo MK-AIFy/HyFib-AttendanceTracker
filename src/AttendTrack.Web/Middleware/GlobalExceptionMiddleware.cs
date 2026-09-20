@@ -57,6 +57,8 @@ public sealed class GlobalExceptionMiddleware
             ConcurrencyException       => (HttpStatusCode.Conflict, new { error = "concurrency",        message = ex.Message, traceId }),
             NotCheckedInException      => (HttpStatusCode.UnprocessableEntity, new { error = "not_checked_in", message = ex.Message, traceId }),
             UnauthorizedKioskException => (HttpStatusCode.Forbidden, new { error = "unauthorized_kiosk", message = ex.Message, traceId }),
+            KioskLockedOutException       => (HttpStatusCode.TooManyRequests, new { error = "kiosk_locked_out", message = ex.Message, traceId }),
+            InvalidKioskCredentialsException => (HttpStatusCode.Unauthorized, new { error = "invalid_kiosk_credentials", message = ex.Message, traceId }),
             DomainException            => (HttpStatusCode.BadRequest, new { error = "domain_error", message = ex.Message, traceId }),
             UnauthorizedAccessException => (HttpStatusCode.Unauthorized, new { error = "unauthorized", traceId }),
             _ => (HttpStatusCode.InternalServerError, new { error = "internal_error", traceId }),
