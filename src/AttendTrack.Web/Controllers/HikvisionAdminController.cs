@@ -1,6 +1,8 @@
 using AttendTrack.Application.Commands.Hikvision;
 using AttendTrack.Domain.Interfaces.Repositories;
 using MediatR;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +15,16 @@ namespace AttendTrack.Web.Controllers;
 /// All endpoints require Admin or SuperAdmin role.
 /// </summary>
 [ApiController, Route("api/admin/hikvision")]
-[Authorize(Roles = "SuperAdmin,Admin")]
+// AuthenticationSchemes must be listed explicitly alongside Roles: specifying Roles on
+// [Authorize] makes ASP.NET Core build an ad-hoc policy instead of falling back to
+// Program.cs's DefaultPolicy (which is the only place the Cookie+JWT scheme combination
+// is configured) — so without this, a validly-authenticated JWT bearer client (the whole
+// point of IJwtTokenService, per its own doc comment: "API clients, Hikvision admin
+// tools, mobile, integrations") can never satisfy the role check here, only cookie-
+// authenticated Blazor UI sessions can. Confirmed empirically: a JWT with role=SuperAdmin
+// gets 401 on this endpoint but 200 on GET /auth/me (bare [Authorize], no Roles).
+[Authorize(Roles = "SuperAdmin,Admin",
+    AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme + "," + JwtBearerDefaults.AuthenticationScheme)]
 public sealed class HikvisionAdminController : ControllerBase
 {
     private readonly IMediator                  _mediator;
@@ -55,7 +66,16 @@ public sealed class HikvisionAdminController : ControllerBase
     {
         var device = await _deviceRepo.GetByIdAsync(deviceId, ct);
         if (device is null) return NotFound();
-        return Ok(device);
+
+        // Same projection as GetDevices — never serialize AdminPasswordHash or
+        // AdminPasswordProtected. The latter is decryptable (IDataProtector), so
+        // returning it here would hand out the device's real admin password.
+        return Ok(new
+        {
+            device.Id, device.DeviceName, device.Model, device.SerialNumber, device.IpAddress,
+            device.Location, device.FirmwareVersion, device.IsActive,
+            device.EnrolledEmployeeCount, device.LastEventReceivedAt, device.LastPollAt
+        });
     }
 
     /// <summary>

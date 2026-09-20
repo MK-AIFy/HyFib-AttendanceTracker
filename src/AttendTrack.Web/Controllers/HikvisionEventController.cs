@@ -1,5 +1,7 @@
 using AttendTrack.Application.Commands.Hikvision;
 using MediatR;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -97,7 +99,10 @@ public sealed class HikvisionEventController : ControllerBase
     /// Fetches events since the given UTC timestamp via ISAPI polling.
     /// </summary>
     [HttpPost("sync/{deviceId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    // See the matching comment on HikvisionAdminController for why AuthenticationSchemes
+    // must be listed explicitly alongside Roles here.
+    [Authorize(Roles = "SuperAdmin,Admin",
+        AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme + "," + JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> SyncDevice(
         Guid     deviceId,
         DateTime sinceUtc,
