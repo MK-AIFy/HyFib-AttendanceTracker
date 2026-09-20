@@ -178,10 +178,7 @@ public sealed class ProcessHikvisionEventHandler
             };
 
             if (record is not null)
-            {
                 eventLog.MarkProcessed(record.Id);
-                _notifier.SignalAttendanceChanged();
-            }
 
             // Must be inside this try: ProcessCheckInAsync/ProcessCheckOutAsync/etc. only
             // mutate the EF change tracker in memory (AddAsync/Update do no DB round trip)
@@ -194,6 +191,29 @@ public sealed class ProcessHikvisionEventHandler
             // the device retries on any non-200, that meant a permanent retry storm of the
             // same doomed event.
             await _uow.SaveChangesAsync(ct);
+
+            // Notify only after the write has actually committed. This used to fire
+            // *before* SaveChangesAsync — an admin with LiveAttendance.razor/Dashboard.razor
+            // open would have their page re-query on a separate DbContext/connection the
+            // instant this ran, hitting the not-yet-committed row under READ COMMITTED and
+            // showing stale data on every single event, deterministically (not a rare
+            // race). OnAttendanceChanged is also a plain multicast Action, so a throwing
+            // subscriber (e.g. a disposed Blazor circuit's dispatcher) would have propagated
+            // back through this call *before* SaveChangesAsync even ran, meaning a valid
+            // check-in/check-out was never persisted at all despite passing every check.
+            // Catching here means a broken subscriber can only lose the live-update ping,
+            // never the underlying write.
+            if (record is not null)
+            {
+                try
+                {
+                    _notifier.SignalAttendanceChanged();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "AttendanceNotifier subscriber threw — ignored");
+                }
+            }
         }
         catch (AlreadyCheckedInException)
         {

@@ -11,6 +11,7 @@ public sealed partial class Reports : ComponentBase
     [Inject] private ILogger<Reports>     Logger        { get; set; } = default!;
 
     private IReadOnlyList<DailyReportDto> _reportDays = [];
+    private IReadOnlyList<AttendanceDto>  _overtimeRecords = [];
     private bool _loading;
     private bool _exporting;
     private string? _error;
@@ -70,7 +71,9 @@ public sealed partial class Reports : ComponentBase
         _error = null;
         try
         {
-            _reportDays = await Sender.Send(new GetMonthlyReportQuery(_otYear, _otMonth));
+            var from = new DateOnly(_otYear, _otMonth, 1);
+            var to   = from.AddMonths(1).AddDays(-1);
+            _overtimeRecords = await Sender.Send(new GetOvertimeReportQuery(from, to));
         }
         catch (Exception ex)
         {
