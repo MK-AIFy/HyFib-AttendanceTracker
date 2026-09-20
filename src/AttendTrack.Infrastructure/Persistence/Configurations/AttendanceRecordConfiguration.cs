@@ -16,6 +16,26 @@ public sealed class AttendanceRecordConfiguration : IEntityTypeConfiguration<Att
         // [Gap 2] UNIQUE constraint prevents duplicate check-in for same employee+date
         b.HasIndex(r => new { r.EmployeeId, r.WorkDate }).IsUnique();
 
+        // WorkDate alone (not just as the composite's non-leading... well, leading
+        // column here, but EmployeeId comes first) — every dashboard/report query
+        // that filters by date across ALL employees (GetByDateAsync,
+        // GetByDateRangeAsync — used by the live dashboard, which re-queries on
+        // every biometric event, and every report query) can't use the composite
+        // index efficiently and fell back to a sequential scan.
+        b.HasIndex(r => r.WorkDate)
+            .HasDatabaseName("IX_attendance_records_WorkDate");
+
+        // Partial index for still-open records — serves both
+        // MissedPunchDetectorService's overdue-checkout scan (every 15 min) and
+        // HourlyTrackerService's per-tick open-records query (every 60 s), both of
+        // which filtered on CheckOutTime IS NULL with no supporting index at all,
+        // so cost grew with total historical row count instead of staying bounded
+        // by the (small, and self-bounded by MissedPunchDetectorService) set of
+        // currently-open records.
+        b.HasIndex(r => r.CheckInTime)
+            .HasFilter("\"CheckOutTime\" IS NULL")
+            .HasDatabaseName("IX_attendance_records_OpenCheckIns");
+
         // [Gap 2] PostgreSQL xmin optimistic concurrency token
         // Map the uint Version property to the PostgreSQL xmin system column.
         // xmin is automatically incremented by Postgres on every row update.
