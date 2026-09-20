@@ -103,3 +103,35 @@
     </div>
 }
 
+@if (_overtimeRecords.Count > 0)
+{
+    <div class="card mt-4">
+        <div class="card-header fw-semibold d-flex justify-content-between">
+            Overtime Records
+            <span class="badge bg-warning text-dark">@_overtimeRecords.Count records</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Employee</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Hours Worked</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var rec in _overtimeRecords)
+                    {
+                        <tr>
+                            <td>
+                                @rec.EmployeeName
+                                <span class="text-muted small">(@rec.EmployeeCode)</span>
+                            </td>
+                            <td>@rec.WorkDate</td>
+                            <td>@(rec.CheckInTimeIst ?? "—")</td>
+                            <td>@(rec.CheckOutTimeIst ?? "—")</td>
+                            <td class="text-warning fw-semibold">@rec.TotalHoursWorked.ToString("0.0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+

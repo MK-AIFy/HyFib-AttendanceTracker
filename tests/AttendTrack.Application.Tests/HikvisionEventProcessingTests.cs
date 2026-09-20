@@ -382,5 +382,74 @@ public sealed class HikvisionEventProcessingTests
         captured!.EmployeeCode.Length.Should().Be(20, "must be truncated to the column's HasMaxLength(20)");
         captured.EmployeeCode.Should().Be(longCode[..20]);
     }
+
+    // ─── Test 9: Notifier fires after commit, and a throwing subscriber doesn't
+    //             prevent the event from being processed ───────────────────────
+
+    [Fact]
+    public async Task Handle_CheckInEvent_NotifiesAfterSaveChanges_AndSurvivesThrowingSubscriber()
+    {
+        // SignalAttendanceChanged() used to fire *before* the SaveChangesAsync call
+        // that actually persists the attendance write — an admin dashboard reacting
+        // to the ping and re-querying on a separate DbContext/connection would hit
+        // the not-yet-committed row. It's also a plain multicast Action, so a
+        // throwing subscriber used to propagate back through this call *before*
+        // SaveChangesAsync even ran, losing an otherwise-valid check-in entirely.
+        // This asserts both: the real attendance SaveChangesAsync call happens
+        // before the notify, and a subscriber that throws doesn't stop the record
+        // from being created/returned.
+        var (handler, _, employeeRepo, attendanceRepo, shiftRepo, uow) = BuildHandler();
+        var employee = MakeEmployee();
+        var shift    = MakeShift();
+
+        employeeRepo.Setup(r => r.GetByCodeAsync("EMP-001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(employee);
+        shiftRepo.Setup(r => r.GetByIdAsync(employee.DefaultShiftId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(shift);
+        attendanceRepo.Setup(r => r.GetByEmployeeAndDateAsync(
+            It.IsAny<EmployeeId>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AttendanceRecord?)null);
+        attendanceRepo.Setup(r => r.AddAsync(It.IsAny<AttendanceRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var callOrder = new List<string>();
+        uow.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { callOrder.Add("SaveChanges"); return 1; });
+
+        var notifier = new Mock<IAttendanceNotifier>();
+        notifier.Setup(n => n.SignalAttendanceChanged())
+            .Callback(() =>
+            {
+                callOrder.Add("Notify");
+                throw new InvalidOperationException("simulated disposed Blazor circuit");
+            });
+
+        var handlerWithThrowingNotifier = new ProcessHikvisionEventHandler(
+            Mock.Of<IHikvisionDeviceRepository>(d =>
+                d.AddEventLogAsync(It.IsAny<HikvisionEventLog>(), It.IsAny<CancellationToken>()) == Task.CompletedTask),
+            employeeRepo.Object,
+            attendanceRepo.Object,
+            shiftRepo.Object,
+            uow.Object,
+            OptionsHelper.Create(new HikvisionOptions { FaceCaptureBasePath = Path.GetTempPath() }),
+            notifier.Object,
+            Mock.Of<ILogger<ProcessHikvisionEventHandler>>());
+
+        var cmd = new ProcessHikvisionEventCommand(CheckInXml, null, DateTime.UtcNow);
+
+        // A throwing subscriber propagating out of Handle would fail this test with
+        // that exception directly — no try/catch needed here to prove "doesn't throw".
+        var result = await handlerWithThrowingNotifier.Handle(cmd, CancellationToken.None);
+
+        result.AttendanceRecordId.Should().NotBeNull(
+            "the attendance record must still be created and returned even though the " +
+            "post-save notification callback threw");
+
+        // "SaveChanges" appears twice (Step 2 archive, Step 7 attendance write) — the
+        // notify call must come after the LAST one, not before either.
+        callOrder.Should().Contain("Notify");
+        callOrder.IndexOf("Notify").Should().Be(
+            callOrder.Count - 1, "notify must be the final call, after every SaveChangesAsync");
+    }
 }
 
