@@ -120,18 +120,23 @@ public sealed class HikvisionPollingService : BackgroundService
     private static string BuildRawXmlPlaceholder(Domain.ValueObjects.HikvisionEventParsed ev)
     {
         var epochSec = new DateTimeOffset(ev.EventTimeUtc).ToUnixTimeSeconds();
+        // Every field here is device-sourced and must be escaped — this previously
+        // interpolated raw, so an employee name or card number containing '&'/'<'/'>'
+        // produced invalid XML that HikvisionEventParser silently discarded (logged as
+        // "malformed XML payload — discarded"), dropping that employee's polled events
+        // with no indication it was self-inflicted. See HikvisionXml.
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <EventNotificationAlert version="2.0">
-              <macAddress>{ev.DeviceSerial}</macAddress>
+              <macAddress>{HikvisionXml.Escape(ev.DeviceSerial)}</macAddress>
               <eventType>AccessControllerEvent</eventType>
               <AccessControllerEvent>
                 <time>{epochSec}</time>
-                <employeeNoString>{ev.EmployeeNoString}</employeeNoString>
-                <name>{ev.EmployeeName}</name>
-                <attendanceStatus>{ev.AttendanceStatus}</attendanceStatus>
-                <currentVerifyMode>{ev.CurrentVerifyMode}</currentVerifyMode>
-                <cardNo>{ev.CardNo ?? ""}</cardNo>
+                <employeeNoString>{HikvisionXml.Escape(ev.EmployeeNoString)}</employeeNoString>
+                <name>{HikvisionXml.Escape(ev.EmployeeName)}</name>
+                <attendanceStatus>{HikvisionXml.Escape(ev.AttendanceStatus)}</attendanceStatus>
+                <currentVerifyMode>{HikvisionXml.Escape(ev.CurrentVerifyMode)}</currentVerifyMode>
+                <cardNo>{HikvisionXml.Escape(ev.CardNo)}</cardNo>
               </AccessControllerEvent>
             </EventNotificationAlert>
             """;

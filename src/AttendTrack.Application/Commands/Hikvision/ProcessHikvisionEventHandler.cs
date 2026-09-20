@@ -90,13 +90,25 @@ public sealed class ProcessHikvisionEventHandler
             parsed.CurrentVerifyMode, parsed.DeviceSerial);
 
         // ── Step 2: Archive raw event FIRST (idempotency + DPDP audit trail) ────
+        // Device-sourced fields have no length validation anywhere before this point —
+        // only the target columns are capped (HikvisionEventLogConfiguration). A firmware
+        // quirk or malformed/spoofed payload exceeding a cap used to throw Postgres 22001
+        // ("value too long") from SaveChangesAsync below, uncaught by IsUniqueViolation
+        // (which only matches 23505), producing a 500 instead of the documented
+        // "always 200" contract — and since the device retries on any non-200, that meant
+        // an endless retry of the same oversized payload. Truncate to the column caps
+        // instead of validating-and-rejecting: this handler's whole design is to absorb
+        // bad device data, not bounce it.
         var eventLog = HikvisionEventLog.Create(
-            deviceSerialNumber: parsed.DeviceSerial,
-            employeeCode:       parsed.EmployeeNoString,
-            employeeName:       parsed.EmployeeName,
-            attendanceStatus:   parsed.AttendanceStatus,
-            verifyMode:         parsed.CurrentVerifyMode,
-            cardNo:             parsed.CardNo,
+            // Truncate's input is non-null for these five (HikvisionEventParsed's
+            // corresponding properties are non-nullable string), so its output is
+            // provably non-null too — the ! just tells the compiler what's already true.
+            deviceSerialNumber: Truncate(parsed.DeviceSerial,      100)!,
+            employeeCode:       Truncate(parsed.EmployeeNoString,   20)!,
+            employeeName:       Truncate(parsed.EmployeeName,      200)!,
+            attendanceStatus:   Truncate(parsed.AttendanceStatus,   30)!,
+            verifyMode:         Truncate(parsed.CurrentVerifyMode,  50)!,
+            cardNo:             Truncate(parsed.CardNo,            100),
             deviceLocalTime:    parsed.DeviceLocalTime,
             receivedAtUtc:      cmd.ReceivedAtUtc,
             rawPayload:         cmd.RawXml);
@@ -164,33 +176,54 @@ public sealed class ProcessHikvisionEventHandler
                 "breakOut" => await ProcessBreakEndAsync(employee, parsed, ct),
                 _ => null
             };
+
+            if (record is not null)
+            {
+                eventLog.MarkProcessed(record.Id);
+                _notifier.SignalAttendanceChanged();
+            }
+
+            // Must be inside this try: ProcessCheckInAsync/ProcessCheckOutAsync/etc. only
+            // mutate the EF change tracker in memory (AddAsync/Update do no DB round trip)
+            // — the actual UNIQUE(employee_id, work_date) constraint is only evaluated
+            // here. Previously this call sat *outside* any try/catch, so the exact race
+            // this handler claims to guard against (two near-simultaneous events for the
+            // same employee+day both passing the in-memory duplicate check before either
+            // commits) threw an unhandled DbUpdateException, producing a 500 instead of
+            // the documented "always 200, device retries on non-200" contract — and since
+            // the device retries on any non-200, that meant a permanent retry storm of the
+            // same doomed event.
+            await _uow.SaveChangesAsync(ct);
         }
         catch (AlreadyCheckedInException)
         {
+            // Thrown synchronously inside ProcessCheckInAsync, before any DB write — safe
+            // to mark the event failed and save again; nothing else is pending.
             _logger.LogInformation(
                 "Duplicate check-in for {Code} — idempotent ignore", parsed.EmployeeNoString);
             eventLog.MarkFailed("Duplicate check-in — idempotent ignore");
+            record = null;
+            await _uow.SaveChangesAsync(ct);
         }
         catch (AlreadyCheckedOutException)
         {
             _logger.LogInformation(
                 "Duplicate check-out for {Code} — idempotent ignore", parsed.EmployeeNoString);
             eventLog.MarkFailed("Duplicate check-out — idempotent ignore");
+            record = null;
+            await _uow.SaveChangesAsync(ct);
         }
         catch (Exception ex) when (IsUniqueViolation(ex))
         {
-            _logger.LogWarning(
+            // Deliberately NOT retrying SaveChangesAsync here: `record` is still tracked
+            // in a failed Added/Modified state from the switch above, and EF would just
+            // replay the same failing insert/update. eventLog keeps its Step 2
+            // "unprocessed" state rather than being marked failed — a minor loss of audit
+            // detail, not a regression (today this path never even reaches here, it 500s).
+            _logger.LogWarning(ex,
                 "Concurrent race condition for {Code} — ignored", parsed.EmployeeNoString);
-            eventLog.MarkFailed("Concurrent race — unique violation ignored");
+            record = null;
         }
-
-        if (record is not null)
-        {
-            eventLog.MarkProcessed(record.Id);
-            _notifier.SignalAttendanceChanged();
-        }
-
-        await _uow.SaveChangesAsync(ct);
 
         return new HikvisionProcessResult(
             EmployeeCode:       parsed.EmployeeNoString,
@@ -286,6 +319,9 @@ public sealed class ProcessHikvisionEventHandler
         _logger.LogDebug("Face capture saved: {Path}", fullPath);
         return fullPath;
     }
+
+    private static string? Truncate(string? value, int maxLength) =>
+        value is null || value.Length <= maxLength ? value : value[..maxLength];
 
     private static bool IsUniqueViolation(Exception ex)
     {

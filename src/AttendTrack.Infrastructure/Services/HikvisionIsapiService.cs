@@ -67,8 +67,8 @@ public sealed class HikvisionIsapiService : IHikvisionIsapiService
             <?xml version="1.0" encoding="UTF-8"?>
             <UserInfoList version="2.0">
               <UserInfo>
-                <employeeNo>{XmlEscape(employee.EmployeeCode)}</employeeNo>
-                <name>{XmlEscape(employee.FullName)}</name>
+                <employeeNo>{HikvisionXml.Escape(employee.EmployeeCode)}</employeeNo>
+                <name>{HikvisionXml.Escape(employee.FullName)}</name>
                 <userType>normal</userType>
                 <Valid>
                   <enable>true</enable>
@@ -89,7 +89,7 @@ public sealed class HikvisionIsapiService : IHikvisionIsapiService
                 userResp.StatusCode, employee.EmployeeCode);
 
         // Upload face photo for face recognition enrollment
-        var faceRecord = $"""<FaceDataRecord version="2.0"><employeeNo>{XmlEscape(employee.EmployeeCode)}</employeeNo></FaceDataRecord>""";
+        var faceRecord = $"""<FaceDataRecord version="2.0"><employeeNo>{HikvisionXml.Escape(employee.EmployeeCode)}</employeeNo></FaceDataRecord>""";
 
         using var formContent = new MultipartFormDataContent();
         formContent.Add(
@@ -238,27 +238,18 @@ public sealed class HikvisionIsapiService : IHikvisionIsapiService
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <EventNotificationAlert version="2.0">
-              <macAddress>{XmlEscape(deviceSerial)}</macAddress>
+              <macAddress>{HikvisionXml.Escape(deviceSerial)}</macAddress>
               <eventType>AccessControllerEvent</eventType>
               <AccessControllerEvent>
-                <time>{XmlEscape(timeElem)}</time>
-                <employeeNoString>{XmlEscape(empCode)}</employeeNoString>
-                <name>{XmlEscape(empName)}</name>
-                <attendanceStatus>{XmlEscape(status)}</attendanceStatus>
-                <currentVerifyMode>{XmlEscape(verifyMode)}</currentVerifyMode>
-                <cardNo>{XmlEscape(cardNo)}</cardNo>
+                <time>{HikvisionXml.Escape(timeElem)}</time>
+                <employeeNoString>{HikvisionXml.Escape(empCode)}</employeeNoString>
+                <name>{HikvisionXml.Escape(empName)}</name>
+                <attendanceStatus>{HikvisionXml.Escape(status)}</attendanceStatus>
+                <currentVerifyMode>{HikvisionXml.Escape(verifyMode)}</currentVerifyMode>
+                <cardNo>{HikvisionXml.Escape(cardNo)}</cardNo>
               </AccessControllerEvent>
             </EventNotificationAlert>
             """;
     }
 
-    /// <summary>
-    /// Escapes user-supplied strings so they cannot inject XML structure into
-    /// outbound payloads. Cheap pass — only the five XML special characters.
-    /// </summary>
-    private static string XmlEscape(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return string.Empty;
-        return System.Security.SecurityElement.Escape(value) ?? string.Empty;
-    }
 }
