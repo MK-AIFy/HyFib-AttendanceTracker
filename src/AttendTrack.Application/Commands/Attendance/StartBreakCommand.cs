@@ -50,7 +50,7 @@ public sealed class StartBreakHandler : IRequestHandler<StartBreakCommand, Guid>
         var record = await _attRepo.GetByEmployeeAndDateAsync(employee.Id, today, ct).ConfigureAwait(false)
             ?? throw new NotCheckedInException(employee.Id.Value);
 
-        var breakRecord = record.StartBreak(cmd.BreakType, PunchSource.BlazorKiosk);
+        var breakRecord = record.StartBreak(cmd.BreakType, PunchSource.BlazorKiosk, DateTime.UtcNow);
         _attRepo.Update(record);
         await _uow.SaveChangesAsync(ct).ConfigureAwait(false);
 

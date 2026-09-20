@@ -37,12 +37,12 @@ public sealed class BreakRecord : AggregateRoot<Guid>
         };
     }
 
-    public void End(PunchSource source)
+    public void End(PunchSource source, DateTime endTimeUtc)
     {
         if (EndTime.HasValue)
             throw new DomainException($"Break {Id} is already ended.");
 
-        EndTime   = DateTime.UtcNow;
+        EndTime   = endTimeUtc;
         EndSource = source;
     }
 }
