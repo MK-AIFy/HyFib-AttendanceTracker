@@ -28,22 +28,40 @@ public sealed class CreateEmployeeHandler : IRequestHandler<CreateEmployeeComman
     private readonly IEmployeeRepository   _empRepo;
     private readonly IPasswordHasher       _hasher;
     private readonly IUnitOfWork           _uow;
+    private readonly ICurrentUserService   _currentUser;
     private readonly ILogger<CreateEmployeeHandler> _logger;
 
     public CreateEmployeeHandler(
         IEmployeeRepository          empRepo,
         IPasswordHasher              hasher,
         IUnitOfWork                  uow,
+        ICurrentUserService          currentUser,
         ILogger<CreateEmployeeHandler> logger)
     {
-        _empRepo = empRepo;
-        _hasher  = hasher;
-        _uow     = uow;
-        _logger  = logger;
+        _empRepo     = empRepo;
+        _hasher      = hasher;
+        _uow         = uow;
+        _currentUser = currentUser;
+        _logger      = logger;
     }
 
     public async Task<Guid> Handle(CreateEmployeeCommand cmd, CancellationToken ct)
     {
+        // A caller can never grant a role more privileged than their own —
+        // without this, any role permitted onto /admin/employees (as low as
+        // Manager) could create a brand-new SuperAdmin account and log in as
+        // it. UserRole's ordinal is privilege-ordered: SuperAdmin=0 is most
+        // privileged, so a *lower* requested ordinal than the caller's own
+        // means an escalation attempt.
+        if (!Enum.TryParse<UserRole>(_currentUser.Role, out var callerRole) || cmd.Role < callerRole)
+        {
+            _logger.LogWarning(
+                "Blocked role-escalation attempt: caller role {CallerRole} tried to create employee with role {RequestedRole}",
+                _currentUser.Role ?? "(none)", cmd.Role);
+            throw new InsufficientRoleException(cmd.Role,
+                $"You do not have permission to create an employee with the '{cmd.Role}' role.");
+        }
+
         var existing = await _empRepo.GetByCodeAsync(cmd.EmployeeCode, ct).ConfigureAwait(false);
         if (existing is not null)
             throw new DomainException($"Employee code '{cmd.EmployeeCode}' already in use.");

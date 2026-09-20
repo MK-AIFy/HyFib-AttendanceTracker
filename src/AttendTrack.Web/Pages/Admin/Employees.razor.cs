@@ -1,3 +1,4 @@
+using AttendTrack.Application.Common;
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Enums;
 using AttendTrack.Domain.Interfaces.Repositories;
@@ -15,6 +16,7 @@ public sealed partial class Employees : ComponentBase
     [Inject] private IShiftRepository    ShiftRepo   { get; set; } = default!;
     [Inject] private AttendTrackDbContext Db          { get; set; } = default!;
     [Inject] private ILogger<Employees>  Logger      { get; set; } = default!;
+    [Inject] private ICurrentUserService CurrentUser { get; set; } = default!;
 
     private IReadOnlyList<EmployeeDto>  _employees   = [];
     private IReadOnlyList<Shift>        _shifts      = [];
@@ -22,6 +24,20 @@ public sealed partial class Employees : ComponentBase
     private string _search = string.Empty;
     private bool _loading = true;
     private string? _error;
+
+    // Roles the signed-in admin is allowed to grant — never more privileged
+    // than their own (UserRole's ordinal is privilege-ordered, SuperAdmin=0
+    // highest). Mirrors CreateEmployeeHandler's server-side check; this is
+    // UI-only convenience so the dropdown doesn't even offer an option the
+    // server would reject.
+    private IEnumerable<UserRole> AllowedRoles
+    {
+        get
+        {
+            var callerRole = Enum.TryParse<UserRole>(CurrentUser.Role, out var r) ? r : UserRole.Employee;
+            return Enum.GetValues<UserRole>().Where(role => role >= callerRole);
+        }
+    }
 
     // Modal state
     private bool   _showModal;

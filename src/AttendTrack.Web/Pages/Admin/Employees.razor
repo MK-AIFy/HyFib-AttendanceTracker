@@ -116,7 +116,7 @@ else
                             <div class="col-md-4">
                                 <label class="form-label">Role *</label>
                                 <select class="form-select" @bind="_fRoleStr">
-                                    @foreach (var r in Enum.GetNames<UserRole>())
+                                    @foreach (var r in AllowedRoles)
                                     { <option>@r</option> }
                                 </select>
                             </div>

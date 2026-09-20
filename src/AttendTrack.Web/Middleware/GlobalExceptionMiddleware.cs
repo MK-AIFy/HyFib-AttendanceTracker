@@ -59,6 +59,7 @@ public sealed class GlobalExceptionMiddleware
             UnauthorizedKioskException => (HttpStatusCode.Forbidden, new { error = "unauthorized_kiosk", message = ex.Message, traceId }),
             KioskLockedOutException       => (HttpStatusCode.TooManyRequests, new { error = "kiosk_locked_out", message = ex.Message, traceId }),
             InvalidKioskCredentialsException => (HttpStatusCode.Unauthorized, new { error = "invalid_kiosk_credentials", message = ex.Message, traceId }),
+            InsufficientRoleException  => (HttpStatusCode.Forbidden, new { error = "insufficient_role", message = ex.Message, traceId }),
             DomainException            => (HttpStatusCode.BadRequest, new { error = "domain_error", message = ex.Message, traceId }),
             UnauthorizedAccessException => (HttpStatusCode.Unauthorized, new { error = "unauthorized", traceId }),
             _ => (HttpStatusCode.InternalServerError, new { error = "internal_error", traceId }),
