@@ -34,6 +34,23 @@ public sealed class HourlySlotRepository : IHourlySlotRepository
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<HourlySlot>>> GetByAttendanceIdsAsync(
+        IEnumerable<Guid> attendanceRecordIds, CancellationToken ct = default)
+    {
+        var ids = attendanceRecordIds as ICollection<Guid> ?? attendanceRecordIds.ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, IReadOnlyList<HourlySlot>>();
+
+        var slots = await _db.HourlySlots
+            .Where(s => ids.Contains(s.AttendanceRecordId))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return slots
+            .GroupBy(s => s.AttendanceRecordId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<HourlySlot>)g.ToList());
+    }
+
     public async Task AddAsync(HourlySlot slot, CancellationToken ct = default)
         => await _db.HourlySlots.AddAsync(slot, ct).ConfigureAwait(false);
 
@@ -42,23 +59,5 @@ public sealed class HourlySlotRepository : IHourlySlotRepository
 
     public void Update(HourlySlot slot)
         => _db.HourlySlots.Update(slot);
-
-    /// <summary>
-    /// Insert or update a slot atomically.
-    /// Called by HourlyTrackerService every 60 s (Gap 4).
-    /// </summary>
-    public async Task UpsertAsync(HourlySlot slot, CancellationToken ct = default)
-    {
-        var existing = await GetAsync(slot.AttendanceRecordId, slot.HourSlotNumber, ct)
-            .ConfigureAwait(false);
-
-        if (existing is null)
-            await _db.HourlySlots.AddAsync(slot, ct).ConfigureAwait(false);
-        else
-        {
-            existing.Update(slot.MinutesWorked, slot.IsBreak, slot.IsOvertime);
-            _db.HourlySlots.Update(existing);
-        }
-    }
 }
 
