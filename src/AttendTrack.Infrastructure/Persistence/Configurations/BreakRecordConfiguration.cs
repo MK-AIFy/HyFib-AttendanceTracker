@@ -33,6 +33,11 @@ public sealed class BreakRecordConfiguration : IEntityTypeConfiguration<BreakRec
         b.HasIndex(x => x.EmployeeId);
         b.HasIndex(x => new { x.EmployeeId, x.StartTime });
 
+        // Same reasoning as HourlySlotConfiguration: EmployeeId (a plain Guid here,
+        // unlike AttendanceRecord.EmployeeId which is the EmployeeId value object) is a
+        // denormalized copy of AttendanceRecord.EmployeeId, already cascade-deleted
+        // transitively via AttendanceRecordId -> AttendanceRecord -> Employee.
+
         b.Ignore(x => x.Duration);
         b.Ignore(x => x.IsActive);
         b.Ignore(x => x.DomainEvents);
