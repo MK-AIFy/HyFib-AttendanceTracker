@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text;
+using AttendTrack.Application.Common;
 using AttendTrack.Domain.Entities;
 using AttendTrack.Domain.Enums;
 using AttendTrack.Domain.ValueObjects;
@@ -11,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 
@@ -115,6 +118,16 @@ public sealed class AttendTrackWebApplicationFactory
 
             // Inject IP-spoofing middleware so we can test IP-based auth
             services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>();
+
+            // Tests that call Sender.Send directly via scope.ServiceProvider (most of
+            // this project's integration tests) have no HTTP request and therefore no
+            // authenticated principal — RoleAuthorizationBehaviour/CreateEmployeeHandler's
+            // role checks would reject every one of them as an unauthenticated caller.
+            // Default to SuperAdmin in that case; tests that mint a real JWT and go
+            // through an HttpClient (e.g. HikvisionAdminControllerTests) still get their
+            // real role from the token, since TestCurrentUserService only falls back to
+            // SuperAdmin when there's no authenticated HttpContext at all.
+            services.Replace(ServiceDescriptor.Scoped<ICurrentUserService, TestCurrentUserService>());
         });
     }
 
@@ -226,4 +239,34 @@ internal sealed class TestRemoteIpStartupFilter : IStartupFilter
             });
             next(app);
         };
+}
+
+/// <summary>
+/// Same as the real CurrentUserService, except Role falls back to SuperAdmin
+/// when there's no authenticated HttpContext — see the ConfigureTestServices
+/// comment above for why.
+/// </summary>
+internal sealed class TestCurrentUserService : ICurrentUserService
+{
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public TestCurrentUserService(IHttpContextAccessor httpContextAccessor)
+        => _httpContextAccessor = httpContextAccessor;
+
+    public Guid? UserId
+    {
+        get
+        {
+            var value = _httpContextAccessor.HttpContext?.User
+                .FindFirstValue(ClaimTypes.NameIdentifier);
+            return Guid.TryParse(value, out var id) ? id : null;
+        }
+    }
+
+    public string? Role
+        => _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.Role)
+           ?? nameof(UserRole.SuperAdmin);
+
+    public string? IpAddress
+        => _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
 }
