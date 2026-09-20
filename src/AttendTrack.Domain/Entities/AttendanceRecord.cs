@@ -157,18 +157,18 @@ public sealed class AttendanceRecord : AggregateRoot<Guid>
     public void OverrideCheckInTime(DateTime deviceEventTimeUtc)
         => CheckInTime = deviceEventTimeUtc;
 
-    public BreakRecord StartBreak(BreakType type, PunchSource source)
+    public BreakRecord StartBreak(BreakType type, PunchSource source, DateTime startTimeUtc)
     {
-        var br = BreakRecord.Create(Id, EmployeeId.Value, DateTime.UtcNow, type, source);
+        var br = BreakRecord.Create(Id, EmployeeId.Value, startTimeUtc, type, source);
         _breaks.Add(br);
         return br;
     }
 
-    public void EndBreak(Guid breakRecordId, PunchSource source)
+    public void EndBreak(Guid breakRecordId, PunchSource source, DateTime endTimeUtc)
     {
         var br = _breaks.FirstOrDefault(b => b.Id == breakRecordId)
             ?? throw new DomainException($"Break {breakRecordId} not found on attendance record {Id}.");
-        br.End(source);
+        br.End(source, endTimeUtc);
         RecalculateBreakDuration();
     }
 
